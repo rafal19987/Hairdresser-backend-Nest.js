@@ -1,0 +1,20 @@
+version: '1.0'
+
+services:
+  mysql:
+    image: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 'randomrootpassword'
+      MYSQL_DATABASE: 'nestjs_typeorm'
+      MYSQL_HOST: 'mysql'
+      MYSQL_PORT: 3306
+      MYSQL_USERNAME: 'root'
+      MYSQL_PASSWORD: 'randomrootpassword'
+      MYSQL_SYNCHRONIZE: true
+    ports:
+      - '3306:3306'
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'mysql']
+      timeout: 5s
+      retries: 10
+      interval: 3s
