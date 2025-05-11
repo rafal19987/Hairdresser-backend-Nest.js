@@ -1,28 +1,28 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { Resource } from '../enums/resource.enum';
 import { Action } from '../enums/action.enum';
-import { User } from 'src/users/entities/user.entity';
+import { IsArray, IsEnum } from 'class-validator';
 
 @Entity()
 export class Role {
   @PrimaryGeneratedColumn('uuid')
   uuid: string;
 
-  @OneToMany(() => User, user => user.role)
+  @Column({ nullable: false, unique: true })
   name: string;
 
   @Column()
-  description?: string;
+  displayName?: string;
 
   @Column({ type: 'json' })
-  permissions: Permission[];
+  permissions: PermissionDto[];
 }
 
-@Entity()
-export class Permission {
-  @Column({ type: 'enum', enum: Resource })
+export class PermissionDto {
+  @IsEnum(Resource)
   resource: Resource;
 
-  @Column({ type: 'enum', enum: Action })
+  @IsEnum(Action, { each: true })
+  @IsArray()
   actions: Action[];
 }
