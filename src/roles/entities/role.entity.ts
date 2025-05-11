@@ -8,7 +8,7 @@ export class Role {
   @PrimaryGeneratedColumn('uuid')
   uuid: string;
 
-  @OneToMany(() => User, (user) => user.role)
+  @OneToMany(() => User, user => user.role)
   name: string;
 
   @Column()

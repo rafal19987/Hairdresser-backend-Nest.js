@@ -32,7 +32,7 @@ export class User {
   //   default: Role.ADMIN,
   // })
   // role: Role;
-  @ManyToOne(() => Role, (role) => role.name, { eager: true })
+  @ManyToOne(() => Role, role => role.name, { eager: true })
   role: Role;
 
   // @Column({ select: false })
@@ -48,6 +48,6 @@ export class User {
   @Column()
   invintationDate: string;
 
-  @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
+  @OneToMany(() => RefreshToken, refreshToken => refreshToken.user)
   refreshTokens: RefreshToken[]; // Relacja z RefreshToken
 }

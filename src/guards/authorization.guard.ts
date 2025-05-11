@@ -16,6 +16,7 @@ export class AuthorizationGuard implements CanActivate {
     private reflector: Reflector,
     private readonly usersService: UsersService,
   ) {}
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
@@ -46,13 +47,13 @@ export class AuthorizationGuard implements CanActivate {
 
       for (const routePermission of routePermissions) {
         const userPermission = userPermissions.find(
-          (perm) => perm.resource === routePermission.resource,
+          perm => perm.resource === routePermission.resource,
         );
 
         if (!userPermission) throw new ForbiddenException();
 
         const allActionsAvailable = routePermission.actions.every(
-          (requiredAction) => userPermission.actions.includes(requiredAction),
+          requiredAction => userPermission.actions.includes(requiredAction),
         );
         if (!allActionsAvailable) throw new ForbiddenException();
       }
