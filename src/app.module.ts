@@ -9,7 +9,11 @@ import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+      cache: true,
+    }),
     DatabaseModule,
     AuthModule,
     UsersModule,
