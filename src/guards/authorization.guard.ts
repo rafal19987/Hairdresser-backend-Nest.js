@@ -4,17 +4,21 @@ import {
   ExecutionContext,
   UnauthorizedException,
   ForbiddenException,
+  Inject,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { UsersService } from 'src/users/users.service';
 import { PERMISSIONS_KEY } from 'src/decorators/permissions.decorator';
-import { Permission } from 'src/roles/entities/role.entity';
+import { PermissionDto } from 'src/roles/entities/role.entity';
+import {
+  USERS_SERVICE,
+  UsersServiceInterface,
+} from '../users/interfaces/users-service.interface';
 
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
-    private readonly usersService: UsersService,
+    @Inject(USERS_SERVICE) private readonly usersService: UsersServiceInterface,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -24,7 +28,7 @@ export class AuthorizationGuard implements CanActivate {
       throw new UnauthorizedException('User Id not found');
     }
 
-    const routePermissions: Permission[] = this.reflector.getAllAndOverride(
+    const routePermissions: PermissionDto[] = this.reflector.getAllAndOverride(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
