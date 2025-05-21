@@ -4,12 +4,12 @@ import { AuthService } from './auth.service';
 import { UsersModule } from 'src/users/users.module';
 import { RolesModule } from 'src/roles/roles.module';
 import { JwtModule } from '@nestjs/jwt';
-import { jwtConstants } from './constatns';
+import { jwtConstants } from './constants';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RevokedToken } from './entities/revoked-token.entity';
-import { User } from '../users/entities/user.entity';
-import { Role } from '../roles/entities/role.entity';
+import { User } from '@/users/entities/user.entity';
+import { Role } from '@/roles/entities/role.entity';
 
 @Module({
   imports: [

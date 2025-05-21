@@ -8,12 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CreateRoleDto } from './dto/create-role.dto';
-import { AuthenticationGuard } from '../guards/authentication.guard';
-import { AuthorizationGuard } from '../guards/authorization.guard';
-import { Permissions } from '../decorators/permissions.decorator';
+import { AuthenticationGuard } from '@/guard/authentication.guard';
+import { AuthorizationGuard } from '@/guard/authorization.guard';
+import { Permissions } from '@/decorator/permissions.decorator';
 import { Resource } from './enums/resource.enum';
 import { Action } from './enums/action.enum';
-import { ResponseDto } from '../common/dto/response.dto';
+import { ResponseDto } from '@/common/dto/response.dto';
 import {
   ROLES_SERVICE,
   RolesServiceInterface,
