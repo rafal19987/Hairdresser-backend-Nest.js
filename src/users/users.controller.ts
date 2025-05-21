@@ -218,4 +218,27 @@ export class UsersController {
   async remove(@Param('uuid') uuid: string): Promise<ResponseDto> {
     return await this.usersService.remove(uuid);
   }
+
+  @Permissions([{ resource: Resource.USERS, actions: [Action.ADMIN] }])
+  @Put(':uuid/restore')
+  @ApiOperation({
+    summary: 'Restore deleted user',
+    description: 'Restores a previously soft-deleted user',
+  })
+  @ApiParam({
+    name: 'uuid',
+    description: 'User UUID',
+    type: String,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User restored successfully',
+    // type: ResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 400, description: 'User is not deleted' })
+  async restore(@Param('uuid') uuid: string): Promise<ResponseDto> {
+    return await this.usersService.restore(uuid);
+  }
 }

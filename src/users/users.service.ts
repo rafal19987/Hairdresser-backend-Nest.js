@@ -5,16 +5,17 @@ import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { hash } from 'bcrypt';
 import { Role } from 'src/roles/entities/role.entity';
-import { PaginationParamsDto } from '../common/dto/pagination-params.dto';
-import { PaginatedResultDto } from '../common/dto/paginated-result.dto';
-import { createPaginatedResponse } from '../common/helpers/pagination.helper';
-import { ResponseHelper } from '../common/helpers/response.helper';
-import { ResponseDto } from '../common/dto/response.dto';
+import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
+import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
+import { createPaginatedResponse } from '@/common/helpers/pagination.helper';
+import { ResponseHelper } from '@/common/helpers/response.helper';
+import { ResponseDto } from '@/common/dto/response.dto';
 import { UserNotFoundException } from './exceptions/user-not-found.exception';
 import { UsersServiceInterface } from './interfaces/users-service.interface';
 import { UserAlreadyExistsException } from './exceptions/user-already-exists.exception';
 import { EditUserDto } from './dto/edit-user.dto';
-import { RoleNotFoundException } from '../roles/exceptions/role-not-found.exception';
+import { RoleNotFoundException } from '@/roles/exceptions/role-not-found.exception';
+import { UserIsNotDeletedException } from './exceptions/user-is-not-deleted.exception';
 
 @Injectable()
 export class UsersService implements UsersServiceInterface {
@@ -133,7 +134,7 @@ export class UsersService implements UsersServiceInterface {
       });
 
       if (!role) {
-        throw new NotFoundException('Rola nie odnaleziona');
+        throw new RoleNotFoundException();
       }
 
       user.role = role;
@@ -145,13 +146,14 @@ export class UsersService implements UsersServiceInterface {
   }
 
   public async remove(uuid: string): Promise<ResponseDto> {
-    const user = await this.userRepository.findOneBy({
-      uuid: uuid,
+    const user = await this.userRepository.findOne({
+      where: { uuid: uuid },
+      withDeleted: true,
     });
 
     if (!user) throw new UserNotFoundException();
 
-    this.userRepository.remove(user);
+    await this.userRepository.remove(user);
 
     return ResponseHelper.deleted('User successfully deleted');
   }
@@ -166,9 +168,10 @@ export class UsersService implements UsersServiceInterface {
     user.deleted = true;
     user.active = false;
     user.password = '';
-    user.deletedAt = new Date();
 
     await this.userRepository.save(user);
+
+    await this.userRepository.softDelete({ uuid });
 
     return ResponseHelper.softDeleted('User successfully soft deleted');
   }
@@ -180,8 +183,30 @@ export class UsersService implements UsersServiceInterface {
 
     const role = await this.roleRepository.findOneBy({ uuid: user.role.uuid });
 
-    if (!role) throw new NotFoundException('Rola nie odnaleziona');
+    if (!role) throw new RoleNotFoundException();
 
     return role.permissions;
+  }
+
+  public async restore(uuid: string): Promise<ResponseDto> {
+    const user = await this.userRepository.findOne({
+      where: { uuid: uuid },
+      withDeleted: true,
+    });
+
+    if (!user) throw new UserNotFoundException();
+
+    if (!user.deleted) throw new UserIsNotDeletedException();
+
+    // Set deleted flag to false
+    user.deleted = false;
+
+    // Save the changes
+    await this.userRepository.save(user);
+
+    // Use TypeORM's recover method to clear deletedAt
+    await this.userRepository.recover({ uuid });
+
+    return ResponseHelper.restored('User successfully restored');
   }
 }
