@@ -1,11 +1,11 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
-// Reszta importów
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 const envPath = path.resolve(process.cwd(), '.env');
 console.log('Ścieżka do pliku .env:', envPath);
@@ -45,8 +45,31 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
+  // Setup Swagger
+  const config = new DocumentBuilder()
+    .setTitle('Hairdresser API')
+    .setDescription('API documentation for Hairdresser Backend')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
+
   await app.listen(port, () => {
     console.log(`Running API in MODE: ${nodeEnv} on Port: ${port}`);
+    console.log(
+      ` Swagger documentation available at: http://localhost:${port}/api/docs`,
+    );
   });
 }
 

@@ -2,52 +2,63 @@
 import { Role } from 'src/roles/entities/role.entity';
 import { RefreshToken } from 'src/auth/entities/refresh-token.entity';
 import {
+  BeforeInsert,
   Column,
+  CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
+import { IsEmail } from 'class-validator';
 
 @Entity()
 export class User {
   @PrimaryGeneratedColumn('uuid')
   uuid: string;
 
-  @Column()
-  firstName: string;
-
-  @Column()
-  lastName: string;
-
-  @Column()
-  username: string;
-
-  @Column()
+  @Column({ nullable: false, unique: true })
+  @IsEmail()
   email: string;
 
-  // @Column({
-  //   type: 'enum',
-  //   enum: Role,
-  //   default: Role.ADMIN,
-  // })
-  // role: Role;
-  @ManyToOne(() => Role, (role) => role.name, { eager: true })
+  @Column({ nullable: false, unique: true })
+  username: string;
+
+  @Column({ default: null, nullable: true })
+  firstName: string;
+
+  @Column({ default: null, nullable: true })
+  lastName: string;
+
+  @Column({ default: false, nullable: false })
+  active: boolean;
+
+  @Column({ default: false, nullable: false })
+  deleted: boolean;
+
+  @ManyToOne(() => Role, role => role.uuid, { eager: true })
   role: Role;
 
-  // @Column({ select: false })
-  @Column()
+  @Column({ default: null, nullable: true, select: false })
   password: string;
 
-  @Column()
+  @CreateDateColumn()
   createdAt: Date;
 
-  @Column()
-  invintationToken: string;
+  @Column({ default: null, nullable: true })
+  invitationToken: string;
 
-  @Column()
-  invintationDate: string;
+  @Column({ type: 'timestamp', default: null, nullable: true })
+  invitationDate: Date;
 
-  @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
-  refreshTokens: RefreshToken[]; // Relacja z RefreshToken
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  @OneToMany(() => RefreshToken, refreshToken => refreshToken.user)
+  refreshTokens: RefreshToken[];
+
+  @DeleteDateColumn()
+  deletedAt: Date;
 }

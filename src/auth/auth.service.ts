@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -11,6 +12,15 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RevokedToken } from './entities/revoked-token.entity';
+import {
+  USERS_SERVICE,
+  UsersServiceInterface,
+} from '../users/interfaces/users-service.interface';
+import { User } from '../users/entities/user.entity';
+import {
+  ROLES_SERVICE,
+  RolesServiceInterface,
+} from '../roles/interfaces/role-service.interface';
 
 @Injectable()
 export class AuthService {
@@ -19,8 +29,9 @@ export class AuthService {
     private readonly revokedTokenRepository: Repository<RevokedToken>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
-    private readonly usersService: UsersService,
-    private readonly rolesService: RolesService,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @Inject(ROLES_SERVICE) private readonly rolesService: RolesServiceInterface,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -31,7 +42,7 @@ export class AuthService {
     if (!username || !password)
       throw new BadRequestException('Podaj login oraz hasło');
 
-    const user = await this.usersService.findOneByEmail(username);
+    const user = await this.userRepository.findOneBy({ username });
 
     if (!user) throw new UnauthorizedException('Błędny login lub hasło');
 
@@ -104,7 +115,7 @@ export class AuthService {
   }
 
   async validateUser(username: string, pass: string): Promise<any> {
-    const user = await this.usersService.findOneByEmail(username);
+    const user = await this.userRepository.findOneBy({ username });
     if (user && user.password === pass) {
       const { password, ...result } = user;
       return result;

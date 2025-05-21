@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -15,9 +15,9 @@ import { RolesModule } from './roles/roles.module';
       cache: true,
     }),
     DatabaseModule,
+    RolesModule,
     AuthModule,
     UsersModule,
-    RolesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
