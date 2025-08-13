@@ -11,8 +11,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
-import { AuthenticationGuard } from 'src/guards/authentication.guard';
-import { AuthorizationGuard } from 'src/guards/authorization.guard';
 import { Permissions } from 'src/decorators/permissions.decorator';
 import { Resource } from 'src/roles/enums/resource.enum';
 import { Action } from 'src/roles/enums/action.enum';
@@ -31,9 +29,11 @@ import {
   ApiResponse,
   ApiParam,
   ApiBody,
-  ApiBearerAuth,
   ApiQuery,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { AuthenticationGuard } from '@/guard/authentication.guard';
+import { AuthorizationGuard } from '@/guard/authorization.guard';
 
 @UseGuards(AuthenticationGuard, AuthorizationGuard)
 @ApiTags('Users')

@@ -5,22 +5,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
-import { RolesService } from 'src/roles/roles.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RevokedToken } from './entities/revoked-token.entity';
-import {
-  USERS_SERVICE,
-  UsersServiceInterface,
-} from '../users/interfaces/users-service.interface';
-import { User } from '../users/entities/user.entity';
+import { User } from '@/users/entities/user.entity';
 import {
   ROLES_SERVICE,
   RolesServiceInterface,
-} from '../roles/interfaces/role-service.interface';
+} from '@/roles/interfaces/role-service.interface';
 
 @Injectable()
 export class AuthService {
@@ -38,7 +32,7 @@ export class AuthService {
   async signIn(
     username: string,
     password: string,
-  ): Promise<{ accessToken: string; refreshToken: string; userId: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string; user: User }> {
     if (!username || !password)
       throw new BadRequestException('Podaj login oraz hasło');
 
@@ -60,7 +54,7 @@ export class AuthService {
 
     return {
       ...tokens,
-      userId: user.uuid,
+      user: user,
     };
   }
 
@@ -147,5 +141,47 @@ export class AuthService {
       where: { token },
     });
     return !!revokedToken;
+  }
+
+  async signInUsingToken(
+    accessToken: string,
+  ): Promise<{ user: User; newAccessToken?: string }> {
+    try {
+      const isRevoked = await this.isAccessTokenRevoked(accessToken);
+      if (isRevoked) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+
+      const payload = this.jwtService.verify(accessToken) as { userId: string };
+
+      const user = await this.userRepository.findOne({
+        where: { uuid: payload.userId },
+        relations: ['role'],
+      });
+
+      if (!user || !user.active) {
+        throw new UnauthorizedException('User not found or inactive');
+      }
+
+      const decoded = this.jwtService.decode(accessToken) as any;
+      const expirationTime = decoded.exp * 1000;
+      const oneHourFromNow = Date.now() + 60 * 60 * 1000;
+
+      let newAccessToken: string | undefined;
+
+      if (expirationTime < oneHourFromNow) {
+        newAccessToken = this.jwtService.sign(
+          { userId: user.uuid },
+          { expiresIn: '10h' },
+        );
+      }
+
+      return {
+        user,
+        newAccessToken,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid token');
+    }
   }
 }

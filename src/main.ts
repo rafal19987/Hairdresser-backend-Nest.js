@@ -16,7 +16,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const nodeEnv = configService.get('NODE_ENV');
-  const port = configService.get('PORT');
+  const port = configService.get('PORT') || '3000';
 
   app.use(
     helmet({
