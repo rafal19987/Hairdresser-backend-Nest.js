@@ -39,4 +39,9 @@ export class AuthController {
   getProfile(@Request() req) {
     return req.userId;
   }
+
+  @Post('verify-token')
+  async verifyToken(@Body('accessToken') accessToken: string) {
+    return this.authService.signInUsingToken(accessToken);
+  }
 }
