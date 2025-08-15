@@ -59,18 +59,33 @@ export class UsersService implements UsersServiceInterface {
   public async findAll(
     paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<User>> {
-    const { page, limit } = paginationParams;
+    const { page, limit, query } = paginationParams;
 
     const skip = (page - 1) * limit;
 
-    const [users, total] = await this.userRepository.findAndCount({
-      skip,
-      take: limit,
-      order: { createdAt: 'DESC' },
-    });
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.role', 'role')
+      .orderBy('user.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (query) {
+      qb.andWhere(
+        `(
+        user.firstName LIKE :query OR
+        user.lastName LIKE :query OR
+        user.email LIKE :query OR
+        role.displayName LIKE :query
+      )`,
+        { query: `%${query}%` },
+      );
+    }
+
+    const [users, total] = await qb.getManyAndCount();
 
     if (!users || users.length === 0) {
-      throw new NotFoundException('No users found');
+      return createPaginatedResponse([], 0, paginationParams);
     }
 
     return createPaginatedResponse(users, total, paginationParams);
