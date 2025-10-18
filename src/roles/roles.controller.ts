@@ -69,11 +69,11 @@ export class RolesController {
     return await this.rolesService.create(createRoleDto);
   }
 
-  @Permissions([{ resource: Resource.ROLES, actions: [Action.READ] }])
-  @Get(':name')
-  async getRoleByName(@Param('name') name: string) {
-    return await this.rolesService.getRoleByName(name);
-  }
+  // @Permissions([{ resource: Resource.ROLES, actions: [Action.READ] }])
+  // @Get(':name')
+  // async getRoleByName(@Param('name') name: string) {
+  //   return await this.rolesService.getRoleByName(name);
+  // }
 
   @Permissions([{ resource: Resource.ROLES, actions: [Action.READ] }])
   @Get(':id')

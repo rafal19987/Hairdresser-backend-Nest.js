@@ -51,6 +51,7 @@ export class RolesService implements RolesServiceInterface {
   }
 
   async getRoleById(roleId: string): Promise<Role> {
+    console.log(roleId);
     const role = await this.roleRepository.findOneBy({ uuid: roleId });
 
     if (!role) throw new RoleNotFoundException();
@@ -58,11 +59,12 @@ export class RolesService implements RolesServiceInterface {
     return role;
   }
 
-  async getRoleByName(name: string): Promise<Role> {
-    const role = await this.roleRepository.findOneBy({ name });
-
-    if (!role) throw new RoleNotFoundException();
-
-    return role;
-  }
+  // async getRoleByName(name: string): Promise<Role> {
+  //   console.log(name);
+  //   const role = await this.roleRepository.findOneBy({ name });
+  //
+  //   if (!role) throw new RoleNotFoundException();
+  //
+  //   return role;
+  // }
 }

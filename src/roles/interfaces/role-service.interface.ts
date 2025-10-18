@@ -13,7 +13,7 @@ export interface RolesServiceInterface {
 
   getRoleById(roleId: string): Promise<Role>;
 
-  getRoleByName(name: string): Promise<Role>;
+  // getRoleByName(name: string): Promise<Role>;
 }
 
 export const ROLES_SERVICE = 'ROLES_SERVICE';
