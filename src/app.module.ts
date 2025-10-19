@@ -7,6 +7,9 @@ import { UsersModule } from './users/users.module';
 import { DatabaseModule } from './database/database.module';
 import { RolesModule } from './roles/roles.module';
 import { ServicesModule } from '@/services/services.module';
+import { CalendarModule } from './calendar/calendar.module';
+import { CalendarShareModule } from './calendar-share/calendar-share.module';
+import { AppointmentsModule } from '@/appointment/appointments.module';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { ServicesModule } from '@/services/services.module';
     AuthModule,
     UsersModule,
     ServicesModule,
+    AppointmentsModule,
+    CalendarModule,
+    CalendarShareModule,
   ],
   controllers: [AppController],
   providers: [AppService],
