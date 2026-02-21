@@ -7,6 +7,7 @@ import {
   Post,
   UseGuards,
   Request,
+  Param,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthenticationGuard } from 'src/guards/authentication.guard';
@@ -21,8 +22,12 @@ import {
   ApiGetProfile,
   ApiLogin,
   ApiLogout,
+  ApiSetPassword,
+  ApiVerifyInvitation,
   ApiVerifyToken,
 } from '@/auth/decorators/auth-swagger.decorator';
+import { SetPasswordDto } from '@/auth/dto/set-password.dto';
+import { ResponseDto } from '@/common/dto/response.dto';
 
 @ApiTags('Auth')
 @ApiBearerAuth('JWT-auth')
@@ -59,5 +64,20 @@ export class AuthController {
   @Post('verify-token')
   async verifyToken(@Body('accessToken') accessToken: string) {
     return this.authService.signInUsingToken(accessToken);
+  }
+
+  @ApiSetPassword()
+  @Post('set-password/:token')
+  async setPassword(
+    @Param('token') token: string,
+    @Body() setPasswordDto: SetPasswordDto,
+  ): Promise<ResponseDto> {
+    return await this.authService.setPassword(token, setPasswordDto);
+  }
+
+  @ApiVerifyInvitation()
+  @Get('verify-invitation/:token')
+  async verifyInvitationToken(@Param('token') token: string) {
+    return await this.authService.verifyInvitationToken(token);
   }
 }

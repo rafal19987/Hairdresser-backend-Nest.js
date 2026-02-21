@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -11,7 +10,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RevokedToken } from './entities/revoked-token.entity';
 import { User } from '@/users/entities/user.entity';
-import {compare} from "bcrypt";
+import { compare, hash } from 'bcrypt';
+import { SetPasswordDto } from '@/auth/dto/set-password.dto';
+import { ResponseDto } from '@/common/dto/response.dto';
+import { ResponseHelper } from '@/common/helpers/response.helper';
+import { InvalidTokenException } from '@/auth/exceptions/invalid-token.exception';
+import { TokenExpiredException } from '@/auth/exceptions/token-expired.exception';
+import { InvalidCredentialsException } from '@/auth/exceptions/invalid-credentials.exception';
+import { InvalidRefreshTokenException } from '@/auth/exceptions/invalid-refresh-token.exception';
+import { TokenRevokedException } from '@/auth/exceptions/token-revoked.exception';
+import { PasswordsNotMatchException } from '@/auth/exceptions/passwords-not-match.exception';
+import { INVITATION_TOKEN_TTL_HOURS } from '@/auth/constants';
 
 @Injectable()
 export class AuthService {
@@ -33,7 +42,7 @@ export class AuthService {
 
       const user = await this.validateUser(username, password);
 
-      if (!user) throw new UnauthorizedException('Błędny login lub hasło');
+      if (!user) throw new InvalidCredentialsException()
 
       const tokens = await this.generateUserTokens(user.uuid);
 
@@ -67,7 +76,7 @@ export class AuthService {
     });
 
     if (!result.affected) {
-      throw new UnauthorizedException('Invalid refresh token');
+      if (!result.affected) throw new InvalidRefreshTokenException();
     }
 
     const payload = this.jwtService.decode(accessToken) as any;
@@ -95,7 +104,7 @@ export class AuthService {
             relations: ['role'],
         });
 
-        if (!user) return null;
+        if (!user || !user.password || !user.active) return null;
 
         const isPasswordValid = await compare(pass, user.password);
         if (!isPasswordValid) return null;
@@ -135,9 +144,7 @@ export class AuthService {
   ): Promise<{ user: User; newAccessToken?: string }> {
     try {
       const isRevoked = await this.isAccessTokenRevoked(accessToken);
-      if (isRevoked) {
-        throw new UnauthorizedException('Token has been revoked');
-      }
+      if (isRevoked) throw new TokenRevokedException()
 
       const payload = this.jwtService.verify(accessToken) as { userId: string };
 
@@ -167,5 +174,45 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException('Invalid token');
     }
+  }
+
+  async setPassword(token: string, setPasswordDto: SetPasswordDto): Promise<ResponseDto> {
+    const user = await this.userRepository.findOneBy({
+      invitationToken: token,
+    });
+
+    if (!user) throw new InvalidTokenException();
+
+    const tokenExpiryDate = new Date(user.invitationDate);
+    tokenExpiryDate.setHours(tokenExpiryDate.getHours() + 48);
+
+    if (new Date() > tokenExpiryDate) {
+      throw new TokenExpiredException();
+    }
+
+    if (setPasswordDto.password !== setPasswordDto.repeatPassword) throw new PasswordsNotMatchException();
+
+    user.password = await hash(setPasswordDto.password, 10);
+    user.active = true;
+    user.invitationToken = null;
+
+    await this.userRepository.save(user);
+
+    return ResponseHelper.success('Hasło zostało ustawione, możesz się zalogować');
+  }
+
+  async verifyInvitationToken(token: string): Promise<ResponseDto> {
+    const user = await this.userRepository.findOneBy({
+      invitationToken: token,
+    });
+
+    if (!user) throw new InvalidTokenException();
+
+    const tokenExpiryDate = new Date(user.invitationDate);
+    tokenExpiryDate.setHours(tokenExpiryDate.getHours() + INVITATION_TOKEN_TTL_HOURS);
+
+    if (new Date() > tokenExpiryDate) throw new TokenExpiredException();
+
+    return ResponseHelper.success('Token jest prawidłowy');
   }
 }

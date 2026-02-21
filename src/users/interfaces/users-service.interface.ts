@@ -28,6 +28,8 @@ export interface UsersServiceInterface {
   update(uuid: string, editUserDto: EditUserDto): Promise<ResponseDto>;
 
   restore(uuid: string): Promise<ResponseDto>;
+
+  resendInvitation(uuid: string): Promise<ResponseDto>;
 }
 
 export const USERS_SERVICE = 'USERS_SERVICE';
