@@ -15,12 +15,14 @@ import { Resource } from 'src/roles/enums/resource.enum';
 import { Action } from 'src/roles/enums/action.enum';
 import { AuthorizationGuard } from 'src/guards/authorization.guard';
 import {LoginDto} from "@/auth/dto/login.dto";
+import {Throttle} from "@nestjs/throttler";
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @HttpCode(HttpStatus.OK)
+  @Throttle({default: {ttl: 60000, limit: 5}})
   @Post('login')
   signIn(@Body() signInDto: LoginDto) {
     return this.authService.signIn(signInDto.username, signInDto.password);
