@@ -1,6 +1,8 @@
+import {StringValue} from 'ms';
+
 export const jwtConstants = {
-    accessTokenSecret: process.env.JWT_ACCESS_TOKEN_SECRET_KEY,
-    refreshTokenSecret: process.env.JWT_REFRESH_TOKEN_SECRET_KEY,
-    accessTokenExpiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN,
-    refreshTokenExpiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN,
+    accessTokenSecret: process.env.JWT_ACCESS_TOKEN_SECRET_KEY as StringValue,
+    refreshTokenSecret: process.env.JWT_REFRESH_TOKEN_SECRET_KEY as StringValue,
+    accessTokenExpiresIn: process.env.JWT_ACCESS_TOKEN_EXPIRES_IN as StringValue,
+    refreshTokenExpiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRES_IN as StringValue,
 };
