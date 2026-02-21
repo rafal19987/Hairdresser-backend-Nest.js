@@ -11,10 +11,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RevokedToken } from './entities/revoked-token.entity';
 import { User } from '@/users/entities/user.entity';
-import {
-  ROLES_SERVICE,
-  RolesServiceInterface,
-} from '@/roles/interfaces/role-service.interface';
 import {compare} from "bcrypt";
 
 @Injectable()
@@ -26,7 +22,6 @@ export class AuthService {
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @Inject(ROLES_SERVICE) private readonly rolesService: RolesServiceInterface,
     private readonly jwtService: JwtService,
   ) {}
 

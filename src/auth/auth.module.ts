@@ -2,7 +2,6 @@ import { forwardRef, Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UsersModule } from 'src/users/users.module';
-import { RolesModule } from 'src/roles/roles.module';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -16,7 +15,6 @@ import {StringValue} from "ms";
   imports: [
     TypeOrmModule.forFeature([RevokedToken, RefreshToken, User, Role]),
     forwardRef(() => UsersModule),
-    forwardRef(() => RolesModule),
       JwtModule.registerAsync({
           imports: [ConfigModule],
           useFactory: async (configService: ConfigService) => ({
