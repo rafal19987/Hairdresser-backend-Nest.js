@@ -17,9 +17,9 @@ import { Role } from '@/roles/entities/role.entity';
     forwardRef(() => UsersModule),
     forwardRef(() => RolesModule),
     JwtModule.register({
-      global: true,
-      secret: jwtConstants.secret,
-      signOptions: { expiresIn: '10h' },
+        global: true,
+        secret: jwtConstants.accessTokenSecret,
+        signOptions: {expiresIn: jwtConstants.accessTokenExpiresIn},
     }),
   ],
   providers: [AuthService],

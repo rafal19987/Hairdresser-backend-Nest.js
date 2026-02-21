@@ -15,6 +15,7 @@ import {
   ROLES_SERVICE,
   RolesServiceInterface,
 } from '@/roles/interfaces/role-service.interface';
+import {jwtConstants} from "@/auth/constants";
 
 @Injectable()
 export class AuthService {
@@ -73,7 +74,10 @@ export class AuthService {
   async generateUserTokens(
     userId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const accessToken = this.jwtService.sign({ userId }, { expiresIn: '10h' });
+      const accessToken = this.jwtService.sign({userId}, {
+          secret: jwtConstants.accessTokenSecret,
+          expiresIn: jwtConstants.accessTokenExpiresIn,
+      });
     const refreshToken = uuidv4();
 
     const expiryDate = new Date();
