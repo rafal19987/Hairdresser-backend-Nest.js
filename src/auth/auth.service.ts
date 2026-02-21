@@ -15,7 +15,7 @@ import {
   ROLES_SERVICE,
   RolesServiceInterface,
 } from '@/roles/interfaces/role-service.interface';
-import {jwtConstants} from "@/auth/constants";
+import {compare} from "bcrypt";
 
 @Injectable()
 export class AuthService {
@@ -33,55 +33,29 @@ export class AuthService {
   async signIn(
     username: string,
     password: string,
-  ): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    if (!username || !password)
-      throw new BadRequestException('Podaj login oraz hasło');
+  ): Promise<{ accessToken: string; refreshToken: string; user: Omit<User, 'password'> }> {
+      if (!username || !password) throw new BadRequestException('Podaj login oraz hasło');
 
-    const user = await this.userRepository.findOneBy({ username });
+      const user = await this.validateUser(username, password);
 
-    if (!user) throw new UnauthorizedException('Błędny login lub hasło');
+      if (!user) throw new UnauthorizedException('Błędny login lub hasło');
 
-    // const payload = {
-    //   sub: user.uuid,
-    //   username: user.username,
-    //   role: user.role,
-    // };
+      const tokens = await this.generateUserTokens(user.uuid);
 
-    // return {
-    //   access_token: await this.jwtService.signAsync(payload),
-    // };
-
-    const tokens = await this.generateUserTokens(user.uuid);
-
-    return {
-      ...tokens,
-      user: user,
-    };
+      return {
+          ...tokens,
+          user
+      };
   }
-
-  // async refreshTokens(userId: string) {
-  //   // const token = await this.RefreshTokenModel.findOne({
-  //   //   token: refreshToken,
-  //   //   expiryDate: { $gte: new Date() },
-  //   // });
-
-  //   // if (!token) {
-  //   //   throw new UnauthorizedException('Refresh Token is invalid');
-  //   // }
-  //   return this.generateUserTokens(token.userId);
-  // }
 
   async generateUserTokens(
     userId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-      const accessToken = this.jwtService.sign({userId}, {
-          secret: jwtConstants.accessTokenSecret,
-          expiresIn: jwtConstants.accessTokenExpiresIn,
-      });
+      const accessToken = this.jwtService.sign({userId});
     const refreshToken = uuidv4();
 
     const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 7); // Ustawienie ważności na 7 dni
+      expiryDate.setDate(expiryDate.getDate() + 7);
 
     await this.refreshTokenRepository.save({
       token: refreshToken,
@@ -93,7 +67,6 @@ export class AuthService {
   }
 
   async logout(refreshToken: string, accessToken: string): Promise<void> {
-    // Usuń refreshToken z bazy danych
     const result = await this.refreshTokenRepository.delete({
       token: refreshToken,
     });
@@ -102,9 +75,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // Dodaj accessToken do listy unieważnionych
     const payload = this.jwtService.decode(accessToken) as any;
-    const expiryDate = new Date(payload.exp * 1000); // Data wygaśnięcia z payloadu
+      const expiryDate = new Date(payload.exp * 1000);
 
     await this.revokedTokenRepository.save({
       token: accessToken,
@@ -112,14 +84,30 @@ export class AuthService {
     });
   }
 
-  async validateUser(username: string, pass: string): Promise<any> {
-    const user = await this.userRepository.findOneBy({ username });
-    if (user && user.password === pass) {
-      const { password, ...result } = user;
-      return result;
+    async validateUser(username: string, pass: string): Promise<Omit<User, 'password'> | null> {
+        const user = await this.userRepository.findOne({
+            where: {username},
+            select: {
+                uuid: true,
+                username: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                active: true,
+                deleted: true,
+                password: true,
+            },
+            relations: ['role'],
+        });
+
+        if (!user) return null;
+
+        const isPasswordValid = await compare(pass, user.password);
+        if (!isPasswordValid) return null;
+
+        const {password, ...result} = user;
+        return result as Omit<User, 'password'>;
     }
-    return null;
-  }
 
   async refreshTokens(
     refreshToken: string,
@@ -174,10 +162,7 @@ export class AuthService {
       let newAccessToken: string | undefined;
 
       if (expirationTime < oneHourFromNow) {
-        newAccessToken = this.jwtService.sign(
-          { userId: user.uuid },
-          { expiresIn: '10h' },
-        );
+          newAccessToken = this.jwtService.sign({userId: user.uuid});
       }
 
       return {
