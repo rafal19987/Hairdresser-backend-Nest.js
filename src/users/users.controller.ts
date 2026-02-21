@@ -35,6 +35,7 @@ import {
   ApiFindAllUsers,
   ApiFindDeletedUsers,
   ApiFindOneUser,
+  ApiResendInvitation,
   ApiRestoreUser,
   ApiSoftDeleteUser,
   ApiUpdateUser,
@@ -110,5 +111,12 @@ export class UsersController {
   @Put(':uuid/restore')
   async restore(@Param('uuid') uuid: string): Promise<ResponseDto> {
     return await this.usersService.restore(uuid);
+  }
+
+  @ApiResendInvitation()
+  @Permissions([{ resource: Resource.USERS, actions: [Action.WRITE] }])
+  @Post(':uuid/resend-invitation')
+  async resendInvitation(@Param('uuid') uuid: string): Promise<ResponseDto> {
+    return await this.usersService.resendInvitation(uuid);
   }
 }

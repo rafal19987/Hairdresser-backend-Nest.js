@@ -1,9 +1,12 @@
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
-import { hash } from 'bcrypt';
 import { Role } from 'src/roles/entities/role.entity';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
@@ -16,6 +19,9 @@ import { UserAlreadyExistsException } from './exceptions/user-already-exists.exc
 import { EditUserDto } from './dto/edit-user.dto';
 import { RoleNotFoundException } from '@/roles/exceptions/role-not-found.exception';
 import { UserIsNotDeletedException } from './exceptions/user-is-not-deleted.exception';
+import { MailService } from '@/mail/mail.service';
+import { UserAlreadyActiveException } from '@/users/exceptions/user-already-active.exception';
+import { RefreshToken } from '@/auth/entities/refresh-token.entity';
 
 @Injectable()
 export class UsersService implements UsersServiceInterface {
@@ -24,6 +30,9 @@ export class UsersService implements UsersServiceInterface {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Role)
     private readonly roleRepository: Repository<Role>,
+    @InjectRepository(RefreshToken)
+    private readonly refreshTokenRepository: Repository<RefreshToken>,
+    private readonly mailService: MailService,
   ) {}
 
   public async find(uuid: string): Promise<ResponseDto> {
@@ -92,34 +101,44 @@ export class UsersService implements UsersServiceInterface {
   }
 
   public async create(createUserDto: CreateUserDto) {
-    let role = null;
-
-    const user = await this.userRepository.findOneBy({
+    const existingUser = await this.userRepository.findOneBy({
       email: createUserDto.email,
     });
 
-    if (user) throw new UserAlreadyExistsException();
+    if (existingUser) throw new UserAlreadyExistsException();
 
-    const hashedPassword = await hash(createUserDto.password, 10);
+    let role = null;
 
-    if (createUserDto.role !== null) {
+    if (createUserDto.role) {
       role = await this.roleRepository.findOneBy({
         uuid: createUserDto.role,
       });
 
-      if (!role) {
-        throw new RoleNotFoundException();
-      }
+      if (!role) throw new RoleNotFoundException();
+    }
+
+    let invitationToken = null;
+    let invitationDate = null;
+
+    if (createUserDto.active) {
+      invitationToken = crypto.randomUUID();
+      invitationDate = new Date();
+
+      await this.mailService.sendInvitation(
+        createUserDto.email,
+        invitationToken,
+      );
     }
 
     const newUser = await this.userRepository.save({
       email: createUserDto.email,
       username: createUserDto.email,
-      password: hashedPassword,
       firstName: createUserDto.firstName,
       lastName: createUserDto.lastName,
       role,
-      active: createUserDto.active,
+      active: false,
+      invitationToken,
+      invitationDate,
     });
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -137,6 +156,10 @@ export class UsersService implements UsersServiceInterface {
     });
 
     if (!user) throw new UserNotFoundException();
+
+    if (editUserDto.active === false && user.active === true) {
+      await this.refreshTokenRepository.delete({ user: { uuid } });
+    }
 
     user.firstName = editUserDto.firstName;
     user.lastName = editUserDto.lastName;
@@ -213,15 +236,34 @@ export class UsersService implements UsersServiceInterface {
 
     if (!user.deleted) throw new UserIsNotDeletedException();
 
-    // Set deleted flag to false
     user.deleted = false;
 
-    // Save the changes
     await this.userRepository.save(user);
 
-    // Use TypeORM's recover method to clear deletedAt
     await this.userRepository.recover({ uuid });
 
     return ResponseHelper.restored('User successfully restored');
+  }
+
+  public async resendInvitation(uuid: string): Promise<ResponseDto> {
+    const user = await this.userRepository.findOneBy({ uuid });
+
+    if (!user) throw new UserNotFoundException();
+
+    if (user.active) {
+      throw new UserAlreadyActiveException();
+    }
+
+    const invitationToken = crypto.randomUUID();
+    const invitationDate = new Date();
+
+    user.invitationToken = invitationToken;
+    user.invitationDate = invitationDate;
+
+    await this.userRepository.save(user);
+
+    await this.mailService.sendInvitation(user.email, invitationToken);
+
+    return ResponseHelper.success('Zaproszenie zostało wysłane ponownie');
   }
 }
