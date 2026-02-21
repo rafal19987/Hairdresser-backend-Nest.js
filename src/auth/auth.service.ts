@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -11,10 +10,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RevokedToken } from './entities/revoked-token.entity';
 import { User } from '@/users/entities/user.entity';
-import {
-  ROLES_SERVICE,
-  RolesServiceInterface,
-} from '@/roles/interfaces/role-service.interface';
+import { compare, hash } from 'bcrypt';
+import { SetPasswordDto } from '@/auth/dto/set-password.dto';
+import { ResponseDto } from '@/common/dto/response.dto';
+import { ResponseHelper } from '@/common/helpers/response.helper';
+import { InvalidTokenException } from '@/auth/exceptions/invalid-token.exception';
+import { TokenExpiredException } from '@/auth/exceptions/token-expired.exception';
+import { InvalidCredentialsException } from '@/auth/exceptions/invalid-credentials.exception';
+import { InvalidRefreshTokenException } from '@/auth/exceptions/invalid-refresh-token.exception';
+import { TokenRevokedException } from '@/auth/exceptions/token-revoked.exception';
+import { PasswordsNotMatchException } from '@/auth/exceptions/passwords-not-match.exception';
+import { INVITATION_TOKEN_TTL_HOURS } from '@/auth/constants';
 
 @Injectable()
 export class AuthService {
@@ -25,59 +31,35 @@ export class AuthService {
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @Inject(ROLES_SERVICE) private readonly rolesService: RolesServiceInterface,
     private readonly jwtService: JwtService,
   ) {}
 
   async signIn(
     username: string,
     password: string,
-  ): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    if (!username || !password)
-      throw new BadRequestException('Podaj login oraz hasło');
+  ): Promise<{ accessToken: string; refreshToken: string; user: Omit<User, 'password'> }> {
+      if (!username || !password) throw new BadRequestException('Podaj login oraz hasło');
 
-    const user = await this.userRepository.findOneBy({ username });
+      const user = await this.validateUser(username, password);
 
-    if (!user) throw new UnauthorizedException('Błędny login lub hasło');
+      if (!user) throw new InvalidCredentialsException()
 
-    // const payload = {
-    //   sub: user.uuid,
-    //   username: user.username,
-    //   role: user.role,
-    // };
+      const tokens = await this.generateUserTokens(user.uuid);
 
-    // return {
-    //   access_token: await this.jwtService.signAsync(payload),
-    // };
-
-    const tokens = await this.generateUserTokens(user.uuid);
-
-    return {
-      ...tokens,
-      user: user,
-    };
+      return {
+          ...tokens,
+          user
+      };
   }
-
-  // async refreshTokens(userId: string) {
-  //   // const token = await this.RefreshTokenModel.findOne({
-  //   //   token: refreshToken,
-  //   //   expiryDate: { $gte: new Date() },
-  //   // });
-
-  //   // if (!token) {
-  //   //   throw new UnauthorizedException('Refresh Token is invalid');
-  //   // }
-  //   return this.generateUserTokens(token.userId);
-  // }
 
   async generateUserTokens(
     userId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const accessToken = this.jwtService.sign({ userId }, { expiresIn: '10h' });
+      const accessToken = this.jwtService.sign({userId});
     const refreshToken = uuidv4();
 
     const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 7); // Ustawienie ważności na 7 dni
+      expiryDate.setDate(expiryDate.getDate() + 7);
 
     await this.refreshTokenRepository.save({
       token: refreshToken,
@@ -89,18 +71,16 @@ export class AuthService {
   }
 
   async logout(refreshToken: string, accessToken: string): Promise<void> {
-    // Usuń refreshToken z bazy danych
     const result = await this.refreshTokenRepository.delete({
       token: refreshToken,
     });
 
     if (!result.affected) {
-      throw new UnauthorizedException('Invalid refresh token');
+      if (!result.affected) throw new InvalidRefreshTokenException();
     }
 
-    // Dodaj accessToken do listy unieważnionych
     const payload = this.jwtService.decode(accessToken) as any;
-    const expiryDate = new Date(payload.exp * 1000); // Data wygaśnięcia z payloadu
+      const expiryDate = new Date(payload.exp * 1000);
 
     await this.revokedTokenRepository.save({
       token: accessToken,
@@ -108,14 +88,30 @@ export class AuthService {
     });
   }
 
-  async validateUser(username: string, pass: string): Promise<any> {
-    const user = await this.userRepository.findOneBy({ username });
-    if (user && user.password === pass) {
-      const { password, ...result } = user;
-      return result;
+    async validateUser(username: string, pass: string): Promise<Omit<User, 'password'> | null> {
+        const user = await this.userRepository.findOne({
+            where: {username},
+            select: {
+                uuid: true,
+                username: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                active: true,
+                deleted: true,
+                password: true,
+            },
+            relations: ['role'],
+        });
+
+        if (!user || !user.password || !user.active) return null;
+
+        const isPasswordValid = await compare(pass, user.password);
+        if (!isPasswordValid) return null;
+
+        const {password, ...result} = user;
+        return result as Omit<User, 'password'>;
     }
-    return null;
-  }
 
   async refreshTokens(
     refreshToken: string,
@@ -148,9 +144,7 @@ export class AuthService {
   ): Promise<{ user: User; newAccessToken?: string }> {
     try {
       const isRevoked = await this.isAccessTokenRevoked(accessToken);
-      if (isRevoked) {
-        throw new UnauthorizedException('Token has been revoked');
-      }
+      if (isRevoked) throw new TokenRevokedException()
 
       const payload = this.jwtService.verify(accessToken) as { userId: string };
 
@@ -170,10 +164,7 @@ export class AuthService {
       let newAccessToken: string | undefined;
 
       if (expirationTime < oneHourFromNow) {
-        newAccessToken = this.jwtService.sign(
-          { userId: user.uuid },
-          { expiresIn: '10h' },
-        );
+          newAccessToken = this.jwtService.sign({userId: user.uuid});
       }
 
       return {
@@ -183,5 +174,45 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException('Invalid token');
     }
+  }
+
+  async setPassword(token: string, setPasswordDto: SetPasswordDto): Promise<ResponseDto> {
+    const user = await this.userRepository.findOneBy({
+      invitationToken: token,
+    });
+
+    if (!user) throw new InvalidTokenException();
+
+    const tokenExpiryDate = new Date(user.invitationDate);
+    tokenExpiryDate.setHours(tokenExpiryDate.getHours() + 48);
+
+    if (new Date() > tokenExpiryDate) {
+      throw new TokenExpiredException();
+    }
+
+    if (setPasswordDto.password !== setPasswordDto.repeatPassword) throw new PasswordsNotMatchException();
+
+    user.password = await hash(setPasswordDto.password, 10);
+    user.active = true;
+    user.invitationToken = null;
+
+    await this.userRepository.save(user);
+
+    return ResponseHelper.success('Hasło zostało ustawione, możesz się zalogować');
+  }
+
+  async verifyInvitationToken(token: string): Promise<ResponseDto> {
+    const user = await this.userRepository.findOneBy({
+      invitationToken: token,
+    });
+
+    if (!user) throw new InvalidTokenException();
+
+    const tokenExpiryDate = new Date(user.invitationDate);
+    tokenExpiryDate.setHours(tokenExpiryDate.getHours() + INVITATION_TOKEN_TTL_HOURS);
+
+    if (new Date() > tokenExpiryDate) throw new TokenExpiredException();
+
+    return ResponseHelper.success('Token jest prawidłowy');
   }
 }

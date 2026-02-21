@@ -1,4 +1,3 @@
-// import { Role } from 'src/auth/enums/role.enum';
 import {
   IsBoolean,
   IsEmail,
@@ -6,9 +5,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
-  MaxLength,
-  MinLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -21,22 +17,6 @@ export class CreateUserDto {
   @IsEmail()
   @IsNotEmpty()
   readonly email: string;
-
-  @ApiProperty({
-    description:
-      'User password (min 8 chars, must contain uppercase, lowercase and number)',
-    example: 'Password123',
-    required: true,
-    minLength: 8,
-    maxLength: 50,
-  })
-  @IsString()
-  @MinLength(8)
-  @MaxLength(50)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$/, {
-    message: 'Password too weak',
-  })
-  readonly password: string;
 
   @ApiProperty({
     description: 'User first name',
@@ -58,13 +38,13 @@ export class CreateUserDto {
 
   @ApiProperty({
     description: 'Whether the user account is active',
-    example: true,
-    required: false,
-    default: true,
+    example: false,
+    required: true,
+    default: false,
   })
   @IsBoolean()
-  @IsOptional()
-  readonly active?: boolean;
+  @IsNotEmpty()
+  readonly active: boolean;
 
   @ApiProperty({
     description: 'UUID of the role assigned to the user',

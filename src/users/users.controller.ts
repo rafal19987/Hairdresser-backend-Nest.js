@@ -25,149 +25,66 @@ import {
 import { EditUserDto } from './dto/edit-user.dto';
 import {
   ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiBody,
-  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AuthenticationGuard } from '@/guard/authentication.guard';
 import { AuthorizationGuard } from '@/guard/authorization.guard';
+import {
+  ApiCreateUser,
+  ApiDeleteUser,
+  ApiFindAllUsers,
+  ApiFindDeletedUsers,
+  ApiFindOneUser,
+  ApiResendInvitation,
+  ApiRestoreUser,
+  ApiSoftDeleteUser,
+  ApiUpdateUser,
+} from '@/users/decorators/users-swagger.decorator';
 
-@UseGuards(AuthenticationGuard, AuthorizationGuard)
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(AuthenticationGuard, AuthorizationGuard)
 @Controller('users')
 export class UsersController {
   constructor(
     @Inject(USERS_SERVICE) private readonly usersService: UsersServiceInterface,
   ) {}
 
+  @ApiFindAllUsers()
   @Permissions([{ resource: Resource.USERS, actions: [Action.READ] }])
   @Get()
-  @ApiOperation({
-    summary: 'Get all users',
-    description: 'Retrieves a paginated list of all active users',
-  })
-  @ApiQuery({
-    name: 'page',
-    description: 'Page number',
-    required: false,
-    type: Number,
-    example: 1,
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Number of items per page',
-    required: false,
-    type: Number,
-    example: 10,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of users retrieved successfully',
-    type: PaginatedResultDto,
-  })
-  @ApiResponse({ status: 404, description: 'No users found' })
   async findAll(
     @Query() paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<User>> {
     return await this.usersService.findAll(paginationParams);
   }
 
+  @ApiFindDeletedUsers()
   @Permissions([{ resource: Resource.USERS, actions: [Action.ALL] }])
   @Get('archive')
-  @ApiOperation({
-    summary: 'Get deleted users',
-    description: 'Retrieves a paginated list of all deleted users',
-  })
-  @ApiQuery({
-    name: 'page',
-    description: 'Page number',
-    required: false,
-    type: Number,
-    example: 1,
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Number of items per page',
-    required: false,
-    type: Number,
-    example: 10,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of deleted users retrieved successfully',
-    type: PaginatedResultDto,
-  })
-  @ApiResponse({ status: 404, description: 'No deleted users found' })
   async findDeleted(
     @Query() paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<User>> {
     return await this.usersService.findDeletedAll(paginationParams);
   }
 
+  @ApiFindOneUser()
   @Permissions([{ resource: Resource.USERS, actions: [Action.READ] }])
   @Get(':uuid')
-  @ApiOperation({
-    summary: 'Get user by UUID',
-    description: 'Retrieves a specific user by UUID',
-  })
-  @ApiParam({
-    name: 'uuid',
-    description: 'User UUID',
-    type: String,
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'User found successfully',
-    // type: ResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
   async findOne(@Param('uuid') uuid: string) {
     return await this.usersService.find(uuid);
   }
 
+  @ApiCreateUser()
   @Permissions([{ resource: Resource.USERS, actions: [Action.CREATE] }])
   @Post()
-  @ApiOperation({ summary: 'Create user', description: 'Creates a new user' })
-  @ApiBody({ type: CreateUserDto, description: 'User data' })
-  @ApiResponse({
-    status: 201,
-    description: 'User created successfully',
-    // type: ResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Bad request - Invalid data' })
-  @ApiResponse({
-    status: 409,
-    description: 'User with this email already exists',
-  })
   async create(@Body() createUserDto: CreateUserDto): Promise<ResponseDto> {
     return await this.usersService.create(createUserDto);
   }
 
+  @ApiUpdateUser()
   @Permissions([{ resource: Resource.USERS, actions: [Action.WRITE] }])
   @Put(':uuid')
-  @ApiOperation({
-    summary: 'Update user',
-    description: 'Updates an existing user',
-  })
-  @ApiParam({
-    name: 'uuid',
-    description: 'User UUID',
-    type: String,
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiBody({ type: EditUserDto, description: 'Updated user data' })
-  @ApiResponse({
-    status: 200,
-    description: 'User updated successfully',
-    // type: ResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Bad request - Invalid data' })
-  @ApiResponse({ status: 404, description: 'User not found' })
   async update(
     @Param('uuid') uuid: string,
     @Body() editUserDto: EditUserDto,
@@ -175,70 +92,31 @@ export class UsersController {
     return await this.usersService.update(uuid, editUserDto);
   }
 
+  @ApiSoftDeleteUser()
   @Permissions([{ resource: Resource.USERS, actions: [Action.ALL] }])
   @Delete(':uuid')
-  @ApiOperation({
-    summary: 'Soft delete user',
-    description: 'Marks a user as deleted without removing from database',
-  })
-  @ApiParam({
-    name: 'uuid',
-    description: 'User UUID',
-    type: String,
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: 202,
-    description: 'User soft deleted successfully',
-    // type: ResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
   async softDelete(@Param('uuid') uuid: string): Promise<ResponseDto> {
     return await this.usersService.softDelete(uuid);
   }
 
+  @ApiDeleteUser()
   @Permissions([{ resource: Resource.USERS, actions: [Action.ADMIN] }])
   @Delete(':uuid/delete')
-  @ApiOperation({
-    summary: 'Permanently delete user',
-    description: 'Permanently removes a user from the database',
-  })
-  @ApiParam({
-    name: 'uuid',
-    description: 'User UUID',
-    type: String,
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'User permanently deleted successfully',
-    // type: ResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
   async remove(@Param('uuid') uuid: string): Promise<ResponseDto> {
     return await this.usersService.remove(uuid);
   }
 
+  @ApiRestoreUser()
   @Permissions([{ resource: Resource.USERS, actions: [Action.ADMIN] }])
   @Put(':uuid/restore')
-  @ApiOperation({
-    summary: 'Restore deleted user',
-    description: 'Restores a previously soft-deleted user',
-  })
-  @ApiParam({
-    name: 'uuid',
-    description: 'User UUID',
-    type: String,
-    example: '123e4567-e89b-12d3-a456-426614174000',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'User restored successfully',
-    // type: ResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  @ApiResponse({ status: 400, description: 'User is not deleted' })
   async restore(@Param('uuid') uuid: string): Promise<ResponseDto> {
     return await this.usersService.restore(uuid);
+  }
+
+  @ApiResendInvitation()
+  @Permissions([{ resource: Resource.USERS, actions: [Action.WRITE] }])
+  @Post(':uuid/resend-invitation')
+  async resendInvitation(@Param('uuid') uuid: string): Promise<ResponseDto> {
+    return await this.usersService.resendInvitation(uuid);
   }
 }
