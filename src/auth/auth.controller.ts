@@ -23,6 +23,7 @@ import {
   ApiLogin,
   ApiLogout,
   ApiSetPassword,
+  ApiVerifyInvitation,
   ApiVerifyToken,
 } from '@/auth/decorators/auth-swagger.decorator';
 import { SetPasswordDto } from '@/auth/dto/set-password.dto';
@@ -72,5 +73,11 @@ export class AuthController {
     @Body() setPasswordDto: SetPasswordDto,
   ): Promise<ResponseDto> {
     return await this.authService.setPassword(token, setPasswordDto);
+  }
+
+  @ApiVerifyInvitation()
+  @Get('verify-invitation/:token')
+  async verifyInvitationToken(@Param('token') token: string) {
+    return await this.authService.verifyInvitationToken(token);
   }
 }

@@ -42,9 +42,9 @@ export class MailService implements MailServiceInterface {
     }
   }
 
-  async sendInvitation(email: string, token: string): Promise<void> {
+  async sendInvitation(email: string, invitationToken: string): Promise<void> {
     const appUrl = this.configService.get<string>('APP_URL');
-    const link = `${appUrl}/set-password?token=${token}`;
+    const link = `${appUrl}/set-password/${invitationToken}`;
     const template = MailTemplates.invitation(link);
 
     await this.send({

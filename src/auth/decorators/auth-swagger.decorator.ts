@@ -66,3 +66,15 @@ export function ApiSetPassword() {
     }),
   );
 }
+
+export function ApiVerifyInvitation() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Weryfikuj token zaproszenia' }),
+    ApiParam({ name: 'token', description: 'Invitation token', type: String }),
+    ApiResponse({ status: 200, description: 'Token prawidłowy' }),
+    ApiResponse({
+      status: 401,
+      description: 'Token nieprawidłowy lub wygasły',
+    }),
+  );
+}

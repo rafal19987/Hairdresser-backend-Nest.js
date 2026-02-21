@@ -20,6 +20,7 @@ import { InvalidCredentialsException } from '@/auth/exceptions/invalid-credentia
 import { InvalidRefreshTokenException } from '@/auth/exceptions/invalid-refresh-token.exception';
 import { TokenRevokedException } from '@/auth/exceptions/token-revoked.exception';
 import { PasswordsNotMatchException } from '@/auth/exceptions/passwords-not-match.exception';
+import { INVITATION_TOKEN_TTL_HOURS } from '@/auth/constants';
 
 @Injectable()
 export class AuthService {
@@ -198,5 +199,20 @@ export class AuthService {
     await this.userRepository.save(user);
 
     return ResponseHelper.success('Hasło zostało ustawione, możesz się zalogować');
+  }
+
+  async verifyInvitationToken(token: string): Promise<ResponseDto> {
+    const user = await this.userRepository.findOneBy({
+      invitationToken: token,
+    });
+
+    if (!user) throw new InvalidTokenException();
+
+    const tokenExpiryDate = new Date(user.invitationDate);
+    tokenExpiryDate.setHours(tokenExpiryDate.getHours() + INVITATION_TOKEN_TTL_HOURS);
+
+    if (new Date() > tokenExpiryDate) throw new TokenExpiredException();
+
+    return ResponseHelper.success('Token jest prawidłowy');
   }
 }
