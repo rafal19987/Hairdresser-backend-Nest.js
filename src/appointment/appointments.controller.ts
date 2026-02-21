@@ -1,10 +1,7 @@
 import { Controller, Post, Body, UseGuards, Inject } from '@nestjs/common';
 import {
   ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
-  ApiBody,
 } from '@nestjs/swagger';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { ResponseDto } from '@/common/dto/response.dto';
@@ -17,10 +14,11 @@ import {
   APPOINTMENTS_SERVICE,
   AppointmentsServiceInterface,
 } from '@/appointment/interfaces/appointments-service.interface';
+import { ApiCreateAppointment } from '@/appointment/decorators/appointments-swagger.decorator';
 
-@UseGuards(AuthenticationGuard, AuthorizationGuard)
 @ApiTags('Appointments')
 @ApiBearerAuth('JWT-auth')
+@UseGuards(AuthenticationGuard, AuthorizationGuard)
 @Controller('appointments')
 export class AppointmentsController {
   constructor(
@@ -28,24 +26,9 @@ export class AppointmentsController {
     private readonly appointmentsService: AppointmentsServiceInterface,
   ) {}
 
+  @ApiCreateAppointment()
   @Permissions([{ resource: Resource.CALENDAR, actions: [Action.CREATE] }])
   @Post()
-  @ApiOperation({
-    summary: 'Utwórz nowe spotkanie',
-    description: 'Tworzy nowe spotkanie w określonym kalendarzu',
-  })
-  @ApiBody({
-    type: CreateAppointmentDto,
-    description: 'Dane spotkania do utworzenia',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Spotkanie zostało utworzone',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Nieprawidłowe dane wejściowe',
-  })
   async create(
     @Body() createAppointmentDto: CreateAppointmentDto,
   ): Promise<ResponseDto> {

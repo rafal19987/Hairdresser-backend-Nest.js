@@ -14,20 +14,31 @@ import { Permissions } from 'src/decorators/permissions.decorator';
 import { Resource } from 'src/roles/enums/resource.enum';
 import { Action } from 'src/roles/enums/action.enum';
 import { AuthorizationGuard } from 'src/guards/authorization.guard';
-import {LoginDto} from "@/auth/dto/login.dto";
-import {Throttle} from "@nestjs/throttler";
+import { LoginDto } from '@/auth/dto/login.dto';
+import { Throttle } from '@nestjs/throttler';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiGetProfile,
+  ApiLogin,
+  ApiLogout,
+  ApiVerifyToken,
+} from '@/auth/decorators/auth-swagger.decorator';
 
+@ApiTags('Auth')
+@ApiBearerAuth('JWT-auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  @ApiLogin()
   @HttpCode(HttpStatus.OK)
-  @Throttle({default: {ttl: 60000, limit: 5}})
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('login')
   signIn(@Body() signInDto: LoginDto) {
     return this.authService.signIn(signInDto.username, signInDto.password);
   }
 
+  @ApiLogout()
   @Post('logout')
   async logout(
     @Body('refreshToken') refreshToken: string,
@@ -36,6 +47,7 @@ export class AuthController {
     return this.authService.logout(refreshToken, accessToken);
   }
 
+  @ApiGetProfile()
   @UseGuards(AuthenticationGuard, AuthorizationGuard)
   @Permissions([{ resource: Resource.USERS, actions: [Action.READ] }])
   @Get('profile')
@@ -43,6 +55,7 @@ export class AuthController {
     return req.userId;
   }
 
+  @ApiVerifyToken()
   @Post('verify-token')
   async verifyToken(@Body('accessToken') accessToken: string) {
     return this.authService.signInUsingToken(accessToken);

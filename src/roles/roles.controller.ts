@@ -19,11 +19,18 @@ import {
   ROLES_SERVICE,
   RolesServiceInterface,
 } from './interfaces/role-service.interface';
-import { ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { Role } from '@/roles/entities/role.entity';
+import {
+  ApiCreateRole,
+  ApiFindAllRoles,
+  ApiGetRoleById,
+} from '@/roles/decorators/roles-swagger.decorator';
 
+@ApiTags('Roles')
+@ApiBearerAuth('JWT-auth')
 @UseGuards(AuthenticationGuard, AuthorizationGuard)
 @Controller('roles')
 export class RolesController {
@@ -31,38 +38,16 @@ export class RolesController {
     @Inject(ROLES_SERVICE) private readonly rolesService: RolesServiceInterface,
   ) {}
 
+  @ApiFindAllRoles()
   @Permissions([{ resource: Resource.ROLES, actions: [Action.READ] }])
   @Get()
-  @ApiOperation({
-    summary: 'Get all roles',
-    description: 'Retrieves a paginated list of all active roles',
-  })
-  @ApiQuery({
-    name: 'page',
-    description: 'Page number',
-    required: false,
-    type: Number,
-    example: 1,
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: 'Number of items per page',
-    required: false,
-    type: Number,
-    example: 10,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of roles retrieved successfully',
-    type: PaginatedResultDto,
-  })
-  @ApiResponse({ status: 404, description: 'No roles found' })
   async findAll(
     @Query() paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<Role>> {
     return await this.rolesService.findAll(paginationParams);
   }
 
+  @ApiCreateRole()
   @Permissions([{ resource: Resource.ROLES, actions: [Action.CREATE] }])
   @Post()
   async create(@Body() createRoleDto: CreateRoleDto): Promise<ResponseDto> {
@@ -75,6 +60,7 @@ export class RolesController {
   //   return await this.rolesService.getRoleByName(name);
   // }
 
+  @ApiGetRoleById()
   @Permissions([{ resource: Resource.ROLES, actions: [Action.READ] }])
   @Get(':id')
   async getRoleById(@Param('id') id: string) {
