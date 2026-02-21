@@ -14,6 +14,7 @@ import { Permissions } from 'src/decorators/permissions.decorator';
 import { Resource } from 'src/roles/enums/resource.enum';
 import { Action } from 'src/roles/enums/action.enum';
 import { AuthorizationGuard } from 'src/guards/authorization.guard';
+import {LoginDto} from "@/auth/dto/login.dto";
 
 @Controller('auth')
 export class AuthController {
@@ -21,7 +22,7 @@ export class AuthController {
 
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  signIn(@Body() signInDto: Record<string, any>) {
+  signIn(@Body() signInDto: LoginDto) {
     return this.authService.signIn(signInDto.username, signInDto.password);
   }
 
