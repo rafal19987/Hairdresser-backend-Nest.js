@@ -1,5 +1,5 @@
-import {Module} from '@nestjs/common';
-import {ConfigModule} from '@nestjs/config';
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -13,6 +13,7 @@ import { AppointmentsModule } from '@/appointment/appointments.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { MailModule } from './mail/mail.module';
+import { UsersServicesModule } from './users-services/users-services.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { MailModule } from './mail/mail.module';
     CalendarModule,
     CalendarShareModule,
     MailModule,
+    UsersServicesModule,
   ],
   controllers: [AppController],
   providers: [
