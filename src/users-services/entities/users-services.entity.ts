@@ -14,10 +14,10 @@ export class UsersServices {
   @PrimaryGeneratedColumn('uuid')
   uuid: string;
 
-  @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
   user: User;
 
-  @ManyToOne(() => Service, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Service, { onDelete: 'CASCADE' })
   service: Service;
 
   @Column({

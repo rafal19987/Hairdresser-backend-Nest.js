@@ -31,16 +31,30 @@ export class UsersServicesService implements UsersServicesServiceInterface {
   public async findAll(
     paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<UsersServices>> {
-    const { page, limit } = paginationParams;
+    const { page, limit, query } = paginationParams;
     const skip = (page - 1) * limit;
 
-    const [userServices, total] = await this.userServiceRepository.findAndCount(
-      {
-        skip,
-        take: limit,
-        order: { createdAt: 'DESC' },
-      },
-    );
+    const qb = this.userServiceRepository
+      .createQueryBuilder('userService')
+      .leftJoinAndSelect('userService.user', 'user')
+      .leftJoinAndSelect('userService.service', 'service')
+      .orderBy('userService.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (query) {
+      qb.andWhere(
+        `(
+        user.firstName LIKE :query OR
+        user.lastName LIKE :query OR
+        user.email LIKE :query OR
+        service.name LIKE :query
+      )`,
+        { query: `%${query}%` },
+      );
+    }
+
+    const [userServices, total] = await qb.getManyAndCount();
 
     return createPaginatedResponse(userServices, total, paginationParams);
   }
@@ -84,7 +98,10 @@ export class UsersServicesService implements UsersServicesServiceInterface {
   }
 
   public async find(uuid: string): Promise<ResponseDto> {
-    const userService = await this.userServiceRepository.findOneBy({ uuid });
+    const userService = await this.userServiceRepository.findOne({
+      where: { uuid },
+      relations: ['user', 'service'],
+    });
 
     if (!userService) throw new UserServiceNotFoundException();
 
@@ -115,6 +132,7 @@ export class UsersServicesService implements UsersServicesServiceInterface {
         user: { uuid: createUsersServiceDto.userUuid },
         service: { uuid: createUsersServiceDto.serviceUuid },
       },
+      relations: ['user', 'service'],
     });
 
     if (existing) throw new UsersServicesAlreadyExistsException();
