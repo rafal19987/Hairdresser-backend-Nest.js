@@ -54,19 +54,26 @@ export class ServicesService implements ServicesServiceInterface {
   public async findAll(
     paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<Service>> {
-    const { page, limit } = paginationParams;
-
+    const { page, limit, query } = paginationParams;
     const skip = (page - 1) * limit;
 
-    const [services, total] = await this.serviceRepository.findAndCount({
-      skip,
-      take: limit,
-      order: { createdAt: 'DESC' },
-    });
+    const qb = this.serviceRepository
+      .createQueryBuilder('service')
+      .orderBy('service.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
 
-    if (!services || services.length === 0) {
-      throw new ServiceNotFoundException('No services found');
+    if (query) {
+      qb.andWhere(
+        `(
+        service.name LIKE :query OR
+        service.description LIKE :query
+      )`,
+        { query: `%${query}%` },
+      );
     }
+
+    const [services, total] = await qb.getManyAndCount();
 
     return createPaginatedResponse(services, total, paginationParams);
   }
