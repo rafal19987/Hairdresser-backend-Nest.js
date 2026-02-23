@@ -21,8 +21,8 @@ export class ServicesService implements ServicesServiceInterface {
     private readonly serviceRepository: Repository<Service>,
   ) {}
 
-  public async find(id: number): Promise<ResponseDto> {
-    const service = await this.serviceRepository.findOneBy({ id });
+  public async find(uuid: string): Promise<ResponseDto> {
+    const service = await this.serviceRepository.findOneBy({ uuid });
 
     if (!service) throw new ServiceNotFoundException();
 
@@ -88,11 +88,11 @@ export class ServicesService implements ServicesServiceInterface {
   }
 
   public async update(
-    id: number,
+    uuid: string,
     editServiceDto: EditServiceDto,
   ): Promise<ResponseDto> {
     const service = await this.serviceRepository.findOneBy({
-      id,
+      uuid,
     });
 
     if (!service) throw new ServiceNotFoundException();
@@ -103,12 +103,12 @@ export class ServicesService implements ServicesServiceInterface {
 
     await this.serviceRepository.save(service);
 
-    return ResponseHelper.updated('Service successfully updated', service.id);
+    return ResponseHelper.updated('Service successfully updated', service.uuid);
   }
 
-  public async remove(id: number): Promise<ResponseDto> {
+  public async remove(uuid: string): Promise<ResponseDto> {
     const service = await this.serviceRepository.findOne({
-      where: { id },
+      where: { uuid },
       withDeleted: true,
     });
 
@@ -119,9 +119,9 @@ export class ServicesService implements ServicesServiceInterface {
     return ResponseHelper.deleted('Service successfully deleted');
   }
 
-  public async softDelete(id: number): Promise<ResponseDto> {
+  public async softDelete(uuid: string): Promise<ResponseDto> {
     const service = await this.serviceRepository.findOneBy({
-      id,
+      uuid,
     });
 
     if (!service) throw new ServiceNotFoundException();
@@ -131,14 +131,14 @@ export class ServicesService implements ServicesServiceInterface {
 
     await this.serviceRepository.save(service);
 
-    await this.serviceRepository.softDelete({ id });
+    await this.serviceRepository.softDelete({ uuid });
 
     return ResponseHelper.softDeleted('Service successfully soft deleted');
   }
 
-  public async restore(id: number): Promise<ResponseDto> {
+  public async restore(uuid: string): Promise<ResponseDto> {
     const service = await this.serviceRepository.findOne({
-      where: { id },
+      where: { uuid },
       withDeleted: true,
     });
 
@@ -150,7 +150,7 @@ export class ServicesService implements ServicesServiceInterface {
 
     await this.serviceRepository.save(service);
 
-    await this.serviceRepository.recover({ id });
+    await this.serviceRepository.recover({ uuid });
 
     return ResponseHelper.restored('Service successfully restored');
   }
