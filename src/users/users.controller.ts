@@ -27,8 +27,8 @@ import {
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { AuthenticationGuard } from '@/guard/authentication.guard';
-import { AuthorizationGuard } from '@/guard/authorization.guard';
+import { AuthenticationGuard } from '@/guards/authentication.guard';
+import { AuthorizationGuard } from '@/guards/authorization.guard';
 import {
   ApiCreateUser,
   ApiDeleteUser,

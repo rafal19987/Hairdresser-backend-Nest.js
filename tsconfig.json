@@ -11,21 +11,11 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@/common/*": [
-        "src/common/*"
-      ],
-      "@/database/*": [
-        "src/database/*"
-      ],
-      "@/decorator/*": [
-        "src/decorators/*"
-      ],
-      "@/guard/*": [
-        "src/guards/*"
-      ]
+      "@/*": ["src/*"],
+      "@/common/*": ["src/common/*"],
+      "@/database/*": ["src/database/*"],
+      "@/decorators/*": ["src/decorators/*"],
+      "@/guard/*": ["src/guards/*"]
     },
     "incremental": true,
     "skipLibCheck": true,

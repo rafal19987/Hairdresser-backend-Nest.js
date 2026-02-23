@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Permissions } from '@/decorator/permissions.decorator';
+import { Permissions } from '@/decorators/permissions.decorator';
 import { Resource } from '@/roles/enums/resource.enum';
 import { Action } from '@/roles/enums/action.enum';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
@@ -25,8 +25,8 @@ import { ResponseDto } from '@/common/dto/response.dto';
 import { Service } from '@/services/entities/service.entity';
 import { CreateServiceDto } from '@/services/dto/create-service.dto';
 import { EditServiceDto } from '@/services/dto/edit-service.dto';
-import { AuthenticationGuard } from '@/guard/authentication.guard';
-import { AuthorizationGuard } from '@/guard/authorization.guard';
+import { AuthenticationGuard } from '@/guards/authentication.guard';
+import { AuthorizationGuard } from '@/guards/authorization.guard';
 import {
   ApiCreateService,
   ApiDeleteService,
