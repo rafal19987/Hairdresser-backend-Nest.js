@@ -5,17 +5,14 @@ import {
   Get,
   Inject,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiTags,
-} from '@nestjs/swagger';
-import { Permissions } from '@/decorator/permissions.decorator';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Permissions } from '@/decorators/permissions.decorator';
 import { Resource } from '@/roles/enums/resource.enum';
 import { Action } from '@/roles/enums/action.enum';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
@@ -28,8 +25,8 @@ import { ResponseDto } from '@/common/dto/response.dto';
 import { Service } from '@/services/entities/service.entity';
 import { CreateServiceDto } from '@/services/dto/create-service.dto';
 import { EditServiceDto } from '@/services/dto/edit-service.dto';
-import { AuthenticationGuard } from '@/guard/authentication.guard';
-import { AuthorizationGuard } from '@/guard/authorization.guard';
+import { AuthenticationGuard } from '@/guards/authentication.guard';
+import { AuthorizationGuard } from '@/guards/authorization.guard';
 import {
   ApiCreateService,
   ApiDeleteService,
@@ -71,9 +68,9 @@ export class ServicesController {
 
   @ApiFindOneService()
   @Permissions([{ resource: Resource.SERVICES, actions: [Action.READ] }])
-  @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return await this.servicesService.find(id);
+  @Get(':uuid')
+  async findOne(@Param('uuid', ParseUUIDPipe) uuid: string) {
+    return await this.servicesService.find(uuid);
   }
 
   @ApiCreateService()
@@ -87,34 +84,38 @@ export class ServicesController {
 
   @ApiUpdateService()
   @Permissions([{ resource: Resource.SERVICES, actions: [Action.WRITE] }])
-  @Put(':id')
+  @Put(':uuid')
   async update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('uuid', ParseUUIDPipe) uuid: string,
     @Body() editServiceDto: EditServiceDto,
   ): Promise<ResponseDto> {
-    return await this.servicesService.update(id, editServiceDto);
+    return await this.servicesService.update(uuid, editServiceDto);
   }
 
   @ApiSoftDeleteService()
   @Permissions([{ resource: Resource.SERVICES, actions: [Action.ALL] }])
-  @Delete(':id')
+  @Delete(':uuid')
   async softDelete(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('uuid', ParseUUIDPipe) uuid: string,
   ): Promise<ResponseDto> {
-    return await this.servicesService.softDelete(id);
+    return await this.servicesService.softDelete(uuid);
   }
 
   @ApiDeleteService()
   @Permissions([{ resource: Resource.SERVICES, actions: [Action.ADMIN] }])
-  @Delete(':id/delete')
-  async remove(@Param('id', ParseIntPipe) id: number): Promise<ResponseDto> {
-    return await this.servicesService.remove(id);
+  @Delete(':uuid/delete')
+  async remove(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+  ): Promise<ResponseDto> {
+    return await this.servicesService.remove(uuid);
   }
 
   @ApiRestoreService()
   @Permissions([{ resource: Resource.SERVICES, actions: [Action.ADMIN] }])
-  @Put(':id/restore')
-  async restore(@Param('id', ParseIntPipe) id: number): Promise<ResponseDto> {
-    return await this.servicesService.restore(id);
+  @Put(':uuid/restore')
+  async restore(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+  ): Promise<ResponseDto> {
+    return await this.servicesService.restore(uuid);
   }
 }
