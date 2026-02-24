@@ -8,7 +8,6 @@ import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { createPaginatedResponse } from '@/common/helpers/pagination.helper';
 import { Client } from '@/clients/entities/client.entity';
-import { ClientRefreshToken } from '@/auth-client/entities/client-refresh-token.entity';
 import { ClientsServiceInterface } from '@/clients/interfaces/clients-service.interface';
 import { CreateClientDto } from '@/clients/dto/create-client.dto';
 import { UpdateClientDto } from '@/clients/dto/update-client.dto';
@@ -23,8 +22,6 @@ export class ClientsService implements ClientsServiceInterface {
   constructor(
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
-    @InjectRepository(ClientRefreshToken)
-    private readonly clientRefreshTokenRepository: Repository<ClientRefreshToken>,
     private readonly mailService: MailService,
   ) {}
 
@@ -147,7 +144,6 @@ export class ClientsService implements ClientsServiceInterface {
 
     if (!client) throw new ClientNotFoundException();
 
-    await this.clientRefreshTokenRepository.delete({ client: { uuid } });
     await this.clientRepository.softDelete({ uuid });
 
     return ResponseHelper.deleted('Klient został usunięty');
@@ -191,29 +187,5 @@ export class ClientsService implements ClientsServiceInterface {
       .addSelect('client.password')
       .where('client.email = :email', { email })
       .getOne();
-  }
-
-  public async saveRefreshToken(
-    clientUuid: string,
-    token: string,
-  ): Promise<void> {
-    const client = await this.clientRepository.findOneBy({ uuid: clientUuid });
-
-    if (!client) throw new ClientNotFoundException();
-
-    await this.clientRefreshTokenRepository.save({ client, token });
-  }
-
-  public async removeRefreshToken(token: string): Promise<void> {
-    await this.clientRefreshTokenRepository.delete({ token });
-  }
-
-  public async findRefreshToken(
-    token: string,
-  ): Promise<ClientRefreshToken | null> {
-    return this.clientRefreshTokenRepository.findOne({
-      where: { token },
-      relations: ['client'],
-    });
   }
 }
