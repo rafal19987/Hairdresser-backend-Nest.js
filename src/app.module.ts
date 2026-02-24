@@ -14,6 +14,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { MailModule } from './mail/mail.module';
 import { UsersServicesModule } from './users-services/users-services.module';
+import { ClientsModule } from './clients/clients.module';
+import { AuthClientModule } from './auth-client/auth-client.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { UsersServicesModule } from './users-services/users-services.module';
     CalendarShareModule,
     MailModule,
     UsersServicesModule,
+    ClientsModule,
+    AuthClientModule,
   ],
   controllers: [AppController],
   providers: [
