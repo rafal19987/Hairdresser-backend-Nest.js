@@ -52,4 +52,18 @@ export class MailService implements MailServiceInterface {
       ...template,
     });
   }
+
+  async sendClientEmailVerification(
+    email: string,
+    verificationToken: string,
+  ): Promise<void> {
+    const appUrl = this.configService.get<string>('APP_URL');
+    const link = `${appUrl}/verify-email/${verificationToken}`;
+    const template = MailTemplates.clientEmailVerification(link);
+
+    await this.send({
+      to: email,
+      ...template,
+    });
+  }
 }
