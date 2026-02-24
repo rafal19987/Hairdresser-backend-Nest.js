@@ -1,71 +1,38 @@
 import {
+  IsDateString,
+  IsEmail,
   IsNotEmpty,
   IsOptional,
-  IsEmail,
-  IsUrl,
-  IsPositive,
-  Length,
-  IsArray,
+  IsString,
   IsUUID,
-  IsDateString,
-  ArrayUnique,
+  Length,
 } from 'class-validator';
-import { IsAfter } from '@/appointment/validators/date-range.validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateAppointmentDto {
-  @IsNotEmpty({ message: 'Nazwa jest wymagana' })
-  @Length(1, 255)
-  name: string;
-
-  @IsNotEmpty({ message: 'Właściciel jest wymagany' })
+  @ApiProperty({ example: 'uuid-user-service' })
+  @IsNotEmpty()
   @IsUUID()
-  ownerId: string;
+  userServiceId: string;
 
-  @IsNotEmpty({ message: 'Kalendarz jest wymagany' })
-  @IsUUID()
-  calendarId: string;
-
-  @IsNotEmpty({ message: 'Typ spotkania jest wymagany' })
-  typeId: number;
-
-  @IsOptional()
-  meetingTypeId?: number;
-
-  @IsOptional()
-  @IsUrl({}, { message: 'Podaj poprawny adres URL' })
-  meetingLink?: string;
-
-  @IsOptional()
-  meetingPhoneNumber?: string;
-
-  @IsOptional()
-  eventLocalization?: string;
-
-  @IsOptional()
-  @Length(0, 200, { message: 'Notatka nie może być dłuższa niż 200 znaków' })
-  note?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsEmail(
-    {},
-    { each: true, message: 'Każdy adres musi być poprawnym adresem e-mail' },
-  )
-  @ArrayUnique({ message: 'Adresy e-mail muszą być unikalne' })
-  meetingEmailsToNotify?: string[];
-
-  @IsNotEmpty({ message: 'Data rozpoczęcia jest wymagana' })
+  @ApiProperty({ example: '2026-03-01T10:00:00.000Z' })
+  @IsNotEmpty()
   @IsDateString()
   scheduledAt: string;
 
-  @IsNotEmpty({ message: 'Data zakończenia jest wymagana' })
-  @IsDateString()
-  @IsAfter('scheduledAt', {
-    message: 'Data zakończenia musi być późniejsza niż data rozpoczęcia',
-  })
-  scheduledEndAt: string;
-
+  @ApiProperty({ example: 'jan@example.com', required: false })
   @IsOptional()
-  @IsPositive({ message: 'Czas trwania musi być liczbą dodatnią' })
-  meetingDuration?: number;
+  @IsEmail()
+  clientEmail?: string;
+
+  @ApiProperty({ example: '500600700', required: false })
+  @IsOptional()
+  @IsString()
+  clientPhone?: string;
+
+  @ApiProperty({ example: 'Proszę o kontakt telefoniczny', required: false })
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  note?: string;
 }
