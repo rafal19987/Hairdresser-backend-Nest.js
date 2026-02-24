@@ -6,11 +6,14 @@ import { CLIENTS_SERVICE } from './interfaces/clients-service.interface';
 import { Client } from './entities/client.entity';
 import { AuthModule } from '@/auth/auth.module';
 import { MailModule } from '@/mail/mail.module';
+import { AuthenticationGuard } from '@/guards/authentication.guard';
+import { UsersModule } from '@/users/users.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Client]),
     forwardRef(() => AuthModule),
+    forwardRef(() => UsersModule),
     MailModule,
   ],
   providers: [
@@ -18,8 +21,10 @@ import { MailModule } from '@/mail/mail.module';
       provide: CLIENTS_SERVICE,
       useClass: ClientsService,
     },
+    ClientsService,
+    AuthenticationGuard,
   ],
   controllers: [ClientsController],
-  exports: [CLIENTS_SERVICE],
+  exports: [CLIENTS_SERVICE, ClientsService],
 })
 export class ClientsModule {}
