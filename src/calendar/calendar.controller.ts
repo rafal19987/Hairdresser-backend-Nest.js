@@ -14,12 +14,9 @@ import {
 import { Permissions } from 'src/decorators/permissions.decorator';
 import { CreateCalendarDto } from './dto/create-calendar.dto';
 import { UpdateCalendarDto } from './dto/update-calendar.dto';
-import { AuthenticationGuard } from '@/guard/authentication.guard';
-import { AuthorizationGuard } from '@/guard/authorization.guard';
-import {
-  ApiBearerAuth,
-  ApiTags,
-} from '@nestjs/swagger';
+import { AuthenticationGuard } from '@/guards/authentication.guard';
+import { AuthorizationGuard } from '@/guards/authorization.guard';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   CALENDAR_SERVICE,
   CalendarsServiceInterface,

@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MailServiceInterface } from '@/mail/interfaces/mail.interface';
+import {
+  AppointmentCancelledMailData,
+  AppointmentMailData,
+  AppointmentRescheduledMailData,
+  MailServiceInterface,
+} from '@/mail/interfaces/mail.interface';
 import { MailOptions } from 'nodemailer/lib/smtp-pool';
 import { MailTemplates } from '@/mail/templates/mail-templates';
 import { MailtrapClient } from 'mailtrap';
@@ -51,5 +56,75 @@ export class MailService implements MailServiceInterface {
       to: email,
       ...template,
     });
+  }
+
+  async sendClientEmailVerification(
+    email: string,
+    verificationToken: string,
+  ): Promise<void> {
+    const appUrl = this.configService.get<string>('APP_URL');
+    const link = `${appUrl}/verify-email/${verificationToken}`;
+    const template = MailTemplates.clientEmailVerification(link);
+
+    await this.send({
+      to: email,
+      ...template,
+    });
+  }
+
+  async sendAppointmentCreatedToClient(
+    email: string,
+    data: AppointmentMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentCreatedToClient(data);
+    await this.send({ to: email, ...template });
+  }
+
+  async sendAppointmentCreatedToEmployee(
+    email: string,
+    data: AppointmentMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentCreatedToEmployee(data);
+    await this.send({ to: email, ...template });
+  }
+
+  async sendAppointmentConfirmedToClient(
+    email: string,
+    data: AppointmentMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentConfirmedToClient(data);
+    await this.send({ to: email, ...template });
+  }
+
+  async sendAppointmentCancelledToClient(
+    email: string,
+    data: AppointmentCancelledMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentCancelledToClient(data);
+    await this.send({ to: email, ...template });
+  }
+
+  async sendAppointmentCancelledToEmployee(
+    email: string,
+    data: AppointmentCancelledMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentCancelledToEmployee(data);
+    await this.send({ to: email, ...template });
+  }
+
+  async sendAppointmentRescheduledToClient(
+    email: string,
+    data: AppointmentRescheduledMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentRescheduledToClient(data);
+    await this.send({ to: email, ...template });
+  }
+
+  async sendAppointmentRescheduledToEmployee(
+    email: string,
+    data: AppointmentRescheduledMailData,
+  ): Promise<void> {
+    const template = MailTemplates.appointmentRescheduledToEmployee(data);
+    await this.send({ to: email, ...template });
   }
 }

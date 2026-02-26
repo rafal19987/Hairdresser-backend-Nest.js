@@ -6,7 +6,7 @@ import { ResponseDto } from '@/common/dto/response.dto';
 import { EditServiceDto } from '../dto/edit-service.dto';
 
 export interface ServicesServiceInterface {
-  find(id: number): Promise<ResponseDto>;
+  find(uuid: string): Promise<ResponseDto>;
 
   findDeletedAll(
     paginationParams: PaginationParamsDto,
@@ -18,13 +18,13 @@ export interface ServicesServiceInterface {
 
   create(createUserDto: CreateServiceDto): Promise<ResponseDto>;
 
-  remove(id: number): Promise<ResponseDto>;
+  remove(uuid: string): Promise<ResponseDto>;
 
-  softDelete(id: number): Promise<ResponseDto>;
+  softDelete(uuid: string): Promise<ResponseDto>;
 
-  update(id: number, editUserDto: EditServiceDto): Promise<ResponseDto>;
+  update(uuid: string, editUserDto: EditServiceDto): Promise<ResponseDto>;
 
-  restore(id: number): Promise<ResponseDto>;
+  restore(uuid: string): Promise<ResponseDto>;
 }
 
 export const SERVICES_SERVICE = 'SERVICES_SERVICE';

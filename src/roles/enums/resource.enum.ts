@@ -3,4 +3,5 @@ export enum Resource {
   ROLES = 'roles',
   SERVICES = 'services',
   CALENDAR = 'calendar',
+  CLIENTS = 'clients',
 }
