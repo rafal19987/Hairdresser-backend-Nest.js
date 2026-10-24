@@ -22,11 +22,13 @@ import {
   ApiGetProfile,
   ApiLogin,
   ApiLogout,
+  ApiRefresh,
   ApiSetPassword,
   ApiVerifyInvitation,
   ApiVerifyToken,
 } from '@/auth/decorators/auth-swagger.decorator';
 import { SetPasswordDto } from '@/auth/dto/set-password.dto';
+import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { ResponseDto } from '@/common/dto/response.dto';
 
 @ApiTags('Auth')
@@ -41,6 +43,14 @@ export class AuthController {
   @Post('login')
   signIn(@Body() signInDto: LoginDto) {
     return this.authService.signIn(signInDto.username, signInDto.password);
+  }
+
+  @ApiRefresh()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Post('refresh')
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
+    return this.authService.refreshTokens(refreshTokenDto.refreshToken);
   }
 
   @ApiLogout()

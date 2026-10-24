@@ -1,10 +1,6 @@
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  HttpStatus,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { Role } from 'src/roles/entities/role.entity';
@@ -21,6 +17,7 @@ import { RoleNotFoundException } from '@/roles/exceptions/role-not-found.excepti
 import { UserIsNotDeletedException } from './exceptions/user-is-not-deleted.exception';
 import { MailService } from '@/mail/mail.service';
 import { UserAlreadyActiveException } from '@/users/exceptions/user-already-active.exception';
+import { UserNotActiveException } from '@/users/exceptions/user-not-active.exception';
 import { RefreshToken } from '@/auth/entities/refresh-token.entity';
 
 @Injectable()
@@ -124,10 +121,14 @@ export class UsersService implements UsersServiceInterface {
       invitationToken = crypto.randomUUID();
       invitationDate = new Date();
 
-      await this.mailService.sendInvitation(
-        createUserDto.email,
-        invitationToken,
-      );
+      try {
+        await this.mailService.sendInvitation(
+          createUserDto.email,
+          invitationToken,
+        );
+      } catch (e) {
+        console.log(e);
+      }
     }
 
     const newUser = await this.userRepository.save({
@@ -218,6 +219,8 @@ export class UsersService implements UsersServiceInterface {
     const user = await this.userRepository.findOneBy({ uuid: userId });
 
     if (!user) throw new UserNotFoundException();
+
+    if (!user.active) throw new UserNotActiveException();
 
     const role = await this.roleRepository.findOneBy({ uuid: user.role.uuid });
 
