@@ -20,7 +20,7 @@ npm run build
 npm run test
 npm run test:e2e
 npm run lint
-npm run migration:generate --name=<migration_name>
+npm run migration:generate -- src/migrations/<MigrationName>
 npm run migration:run
 ```
 

@@ -19,11 +19,11 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "typeorm": "ts-node ./node_modules/typeorm/cli",
-    "migration:create": "npm run typeorm -- migration:create ./src/migrations/$npm_config_name",
-    "migration:generate": "npm run build && npx typeorm-ts-node-commonjs -d ./typeorm-cli.config.ts migration:generate ./src/migrations/$npm_config_name",
-    "migration:run": "npm run build && npx typeorm-ts-node-commonjs -d ./typeorm-cli.config.ts migration:run",
-    "migration:revert": "npm run build && npx typeorm-ts-node-commonjs -d ./typeorm-cli.config.ts migration:revert",
-    "seed": "node -r tsconfig-paths/register -r ts-node/register src/database/seed/ts"
+    "migration:create": "typeorm migration:create",
+    "migration:generate": "npm run build && typeorm migration:generate -d dist/typeorm-cli.config.js",
+    "migration:run": "npm run build && typeorm migration:run -d dist/typeorm-cli.config.js",
+    "migration:revert": "npm run build && typeorm migration:revert -d dist/typeorm-cli.config.js",
+    "seed": "node -r tsconfig-paths/register -r ts-node/register src/database/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",
