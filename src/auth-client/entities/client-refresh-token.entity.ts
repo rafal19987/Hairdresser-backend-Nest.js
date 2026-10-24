@@ -15,6 +15,10 @@ export class ClientRefreshToken {
   @Column({ nullable: false })
   token: string;
 
+  // nullable, żeby dodanie kolumny nie wywróciło istniejących wierszy - null traktowany jako wygasły
+  @Column({ type: 'timestamp', nullable: true })
+  expiryDate: Date;
+
   @ManyToOne(() => Client, { onDelete: 'CASCADE' })
   client: Client;
 
