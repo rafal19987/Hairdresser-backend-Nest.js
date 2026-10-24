@@ -77,7 +77,16 @@ export function ApiUpdateAppointment() {
     UuidParam('Appointment UUID'),
     ApiBody({ type: UpdateAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta zaktualizowana' }),
+    ApiResponse({
+      status: 400,
+      description: 'Nieprawidłowy status lub zakres dat',
+    }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
+    ApiResponse({
+      status: 409,
+      description:
+        'Termin jest zajęty, wizyta jest anulowana lub zakończonej wizyty nie można przełożyć',
+    }),
   );
 }
 
@@ -88,7 +97,10 @@ export function ApiCancelAppointment() {
     ApiBody({ type: CancelAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta anulowana' }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
-    ApiResponse({ status: 409, description: 'Wizyta jest już anulowana' }),
+    ApiResponse({
+      status: 409,
+      description: 'Wizyta jest już anulowana lub zakończona',
+    }),
   );
 }
 
@@ -99,7 +111,11 @@ export function ApiRescheduleAppointment() {
     ApiBody({ type: RescheduleAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta przełożona' }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
-    ApiResponse({ status: 409, description: 'Termin jest zajęty' }),
+    ApiResponse({
+      status: 409,
+      description:
+        'Termin jest zajęty lub wizyta jest anulowana albo zakończona',
+    }),
   );
 }
 

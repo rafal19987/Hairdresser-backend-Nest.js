@@ -1,4 +1,4 @@
-import { Appointment } from '../entities/appointment.entity';
+import { AppointmentResponse } from './appointment-response.interface';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 import { CreateInternalAppointmentDto } from '../dto/create-internal-appointment.dto';
 import { UpdateAppointmentDto } from '../dto/update-appointment.dto';
@@ -11,11 +11,11 @@ import { ResponseDto } from '@/common/dto/response.dto';
 export interface AppointmentsServiceInterface {
   findAll(
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>>;
+  ): Promise<PaginatedResultDto<AppointmentResponse>>;
   findByCalendar(
     calendarUuid: string,
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>>;
+  ): Promise<PaginatedResultDto<AppointmentResponse>>;
   find(uuid: string): Promise<ResponseDto>;
   create(
     createAppointmentDto: CreateAppointmentDto,

@@ -20,6 +20,10 @@ import { AppointmentsServiceInterface } from '@/appointment/interfaces/appointme
 import { AppointmentNotFoundException } from '@/appointment/exceptions/appointment-not-found.exception';
 import { AppointmentAlreadyCancelledException } from '@/appointment/exceptions/appointment-already-cancelled.exception';
 import { AppointmentConflictException } from '@/appointment/exceptions/appointment-conflict.exception';
+import { AppointmentNotModifiableException } from '@/appointment/exceptions/appointment-not-modifiable.exception';
+import { AppointmentInvalidDateRangeException } from '@/appointment/exceptions/appointment-invalid-date-range.exception';
+import { AppointmentResponse } from '@/appointment/interfaces/appointment-response.interface';
+import { toAppointmentResponse } from '@/appointment/mappers/appointment-response.mapper';
 import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-found.exception';
 import { UserNotFoundException } from '@/users/exceptions/user-not-found.exception';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
@@ -50,7 +54,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
   public async findAll(
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>> {
+  ): Promise<PaginatedResultDto<AppointmentResponse>> {
     const { page, limit, query } = paginationParams;
     const skip = (page - 1) * limit;
 
@@ -85,13 +89,17 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const [appointments, total] = await qb.getManyAndCount();
 
-    return createPaginatedResponse(appointments, total, paginationParams);
+    return createPaginatedResponse(
+      appointments.map(toAppointmentResponse),
+      total,
+      paginationParams,
+    );
   }
 
   public async findByCalendar(
     calendarUuid: string,
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>> {
+  ): Promise<PaginatedResultDto<AppointmentResponse>> {
     const { page, limit } = paginationParams;
     const skip = (page - 1) * limit;
 
@@ -110,28 +118,27 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       },
     );
 
-    return createPaginatedResponse(appointments, total, paginationParams);
+    return createPaginatedResponse(
+      appointments.map(toAppointmentResponse),
+      total,
+      paginationParams,
+    );
   }
 
   public async find(uuid: string): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid, deleted: false },
-      relations: [
-        'calendar',
-        'client',
-        'userService',
-        'userService.user',
-        'userService.service',
-        'createdBy',
-      ],
-    });
-
-    if (!appointment) throw new AppointmentNotFoundException();
+    const appointment = await this._findNotDeleted(uuid, [
+      'calendar',
+      'client',
+      'userService',
+      'userService.user',
+      'userService.service',
+      'createdBy',
+    ]);
 
     return ResponseHelper.success(
       'Appointment found',
       HttpStatus.OK,
-      appointment,
+      toAppointmentResponse(appointment),
     );
   }
 
@@ -293,14 +300,18 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     uuid: string,
     dto: UpdateAppointmentDto,
   ): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid },
-      relations: ['calendar'],
-    });
+    const appointment = await this._findNotDeleted(uuid, ['calendar']);
 
-    if (!appointment) throw new AppointmentNotFoundException();
+    this._assertNotCancelled(appointment);
+
+    const previousStatus = appointment.status;
 
     if (dto.scheduledAt || dto.scheduledEndAt) {
+      this._assertNotCompleted(
+        appointment,
+        'Zakończonej wizyty nie można przełożyć',
+      );
+
       const scheduledAt = dto.scheduledAt
         ? new Date(dto.scheduledAt)
         : appointment.scheduledAt;
@@ -308,6 +319,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       const scheduledEndAt = dto.scheduledEndAt
         ? new Date(dto.scheduledEndAt)
         : appointment.scheduledEndAt;
+
+      if (scheduledEndAt <= scheduledAt) {
+        throw new AppointmentInvalidDateRangeException();
+      }
 
       await this._checkConflict(
         appointment.calendar.uuid,
@@ -331,7 +346,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     await this.appointmentRepository.save(appointment);
 
-    if (dto.status === AppointmentStatus.CONFIRMED) {
+    if (
+      dto.status === AppointmentStatus.CONFIRMED &&
+      previousStatus !== AppointmentStatus.CONFIRMED
+    ) {
       await this._sendConfirmedMail(appointment);
     }
 
@@ -342,21 +360,21 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     uuid: string,
     dto: CancelAppointmentDto,
   ): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid },
-      relations: [
-        'client',
-        'userService',
-        'userService.user',
-        'userService.service',
-      ],
-    });
-
-    if (!appointment) throw new AppointmentNotFoundException();
+    const appointment = await this._findNotDeleted(uuid, [
+      'client',
+      'userService',
+      'userService.user',
+      'userService.service',
+    ]);
 
     if (appointment.status === AppointmentStatus.CANCELLED) {
       throw new AppointmentAlreadyCancelledException();
     }
+
+    this._assertNotCompleted(
+      appointment,
+      'Zakończonej wizyty nie można anulować',
+    );
 
     appointment.status = AppointmentStatus.CANCELLED;
     appointment.cancelledBy = dto.cancelledBy;
@@ -402,22 +420,19 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     uuid: string,
     dto: RescheduleAppointmentDto,
   ): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid },
-      relations: [
-        'calendar',
-        'client',
-        'userService',
-        'userService.user',
-        'userService.service',
-      ],
-    });
+    const appointment = await this._findNotDeleted(uuid, [
+      'calendar',
+      'client',
+      'userService',
+      'userService.user',
+      'userService.service',
+    ]);
 
-    if (!appointment) throw new AppointmentNotFoundException();
-
-    if (appointment.status === AppointmentStatus.CANCELLED) {
-      throw new AppointmentAlreadyCancelledException();
-    }
+    this._assertNotCancelled(appointment);
+    this._assertNotCompleted(
+      appointment,
+      'Zakończonej wizyty nie można przełożyć',
+    );
 
     const scheduledAt = new Date(dto.scheduledAt);
     const scheduledEndAt = new Date(dto.scheduledEndAt);
@@ -479,14 +494,40 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   }
 
   public async remove(uuid: string): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOneBy({ uuid });
-
-    if (!appointment) throw new AppointmentNotFoundException();
+    const appointment = await this._findNotDeleted(uuid);
 
     appointment.deleted = true;
     await this.appointmentRepository.save(appointment);
 
     return ResponseHelper.deleted('Wizyta została usunięta');
+  }
+
+  private async _findNotDeleted(
+    uuid: string,
+    relations: string[] = [],
+  ): Promise<Appointment> {
+    const appointment = await this.appointmentRepository.findOne({
+      where: { uuid, deleted: false },
+      relations,
+    });
+
+    if (!appointment) throw new AppointmentNotFoundException();
+
+    return appointment;
+  }
+
+  private _assertNotCancelled(appointment: Appointment): void {
+    if (appointment.status === AppointmentStatus.CANCELLED) {
+      throw new AppointmentNotModifiableException(
+        'Anulowanej wizyty nie można modyfikować',
+      );
+    }
+  }
+
+  private _assertNotCompleted(appointment: Appointment, message: string): void {
+    if (appointment.status === AppointmentStatus.COMPLETED) {
+      throw new AppointmentNotModifiableException(message);
+    }
   }
 
   private async _sendConfirmedMail(appointment: Appointment): Promise<void> {
