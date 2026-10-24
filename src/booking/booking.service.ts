@@ -1,6 +1,6 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { ResponseDto } from '@/common/dto/response.dto';
 import { ResponseHelper } from '@/common/helpers/response.helper';
 import { BookingServiceInterface } from '@/booking/interfaces/booking-service.interface';
@@ -9,6 +9,10 @@ import {
   AvailableSlot,
   AvailableSlotsResponse,
 } from '@/booking/interfaces/available-slots-response.interface';
+import {
+  BookableEmployee,
+  BookableEmployeesResponse,
+} from '@/booking/interfaces/bookable-employees-response.interface';
 import { BookingEmployeeUnavailableException } from '@/booking/exceptions/booking-employee-unavailable.exception';
 import { Appointment } from '@/appointment/entities/appointment.entity';
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
@@ -94,30 +98,66 @@ export class BookingService implements BookingServiceInterface {
     );
   }
 
+  public async findBookableEmployees(serviceId: string): Promise<ResponseDto> {
+    const employees = await this._bookableOffersQuery(serviceId)
+      .addSelect('user.firstName', 'firstName')
+      .addSelect('user.lastName', 'lastName')
+      .addSelect('userService.price', 'price')
+      .orderBy('user.lastName', 'ASC')
+      .addOrderBy('user.firstName', 'ASC')
+      .getRawMany<BookableEmployee>();
+
+    if (employees.length === 0) await this._assertServiceBookable(serviceId);
+
+    const response: BookableEmployeesResponse = {
+      serviceId,
+      employees: employees.map(employee => ({
+        ...employee,
+        price: Number(employee.price),
+        duration: Number(employee.duration),
+      })),
+    };
+
+    return ResponseHelper.success(
+      'Bookable employees found',
+      HttpStatus.OK,
+      response,
+    );
+  }
+
+  // Single source of who can be booked, shared by slots and the employee list
+  private _bookableOffersQuery(
+    serviceId: string,
+  ): SelectQueryBuilder<UsersServices> {
+    return (
+      this.usersServicesRepository
+        .createQueryBuilder('userService')
+        .innerJoin('userService.user', 'user')
+        .innerJoin('userService.service', 'service')
+        // Bookings are stored in the employee's default calendar
+        .innerJoin(
+          Calendar,
+          'calendar',
+          'calendar.owner = user.uuid AND calendar.isDefault = true AND calendar.active = true AND calendar.deleted = false',
+        )
+        .select('userService.uuid', 'userServiceId')
+        .addSelect('user.uuid', 'employeeId')
+        .addSelect('userService.duration', 'duration')
+        .where('service.uuid = :serviceId', { serviceId })
+        .andWhere('service.active = true')
+        .andWhere('service.deleted = false')
+        .andWhere('userService.active = true')
+        .andWhere('user.active = true')
+        .andWhere('user.deleted = false')
+        .distinct(true)
+    );
+  }
+
   private async _findBookableOffers(
     serviceId: string,
     employeeId?: string,
   ): Promise<BookableOffer[]> {
-    const qb = this.usersServicesRepository
-      .createQueryBuilder('userService')
-      .innerJoin('userService.user', 'user')
-      .innerJoin('userService.service', 'service')
-      // Bookings are stored in the employee's default calendar
-      .innerJoin(
-        Calendar,
-        'calendar',
-        'calendar.owner = user.uuid AND calendar.isDefault = true AND calendar.active = true AND calendar.deleted = false',
-      )
-      .select('userService.uuid', 'userServiceId')
-      .addSelect('user.uuid', 'employeeId')
-      .addSelect('userService.duration', 'duration')
-      .where('service.uuid = :serviceId', { serviceId })
-      .andWhere('service.active = true')
-      .andWhere('service.deleted = false')
-      .andWhere('userService.active = true')
-      .andWhere('user.active = true')
-      .andWhere('user.deleted = false')
-      .distinct(true);
+    const qb = this._bookableOffersQuery(serviceId);
 
     if (employeeId) qb.andWhere('user.uuid = :employeeId', { employeeId });
 

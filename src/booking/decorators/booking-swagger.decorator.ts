@@ -1,5 +1,5 @@
 import { applyDecorators } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 
 export function ApiFindAvailableSlots() {
   return applyDecorators(
@@ -18,5 +18,19 @@ export function ApiFindAvailableSlots() {
       description:
         'Service not found or selected employee does not offer the service',
     }),
+  );
+}
+
+export function ApiFindBookableEmployees() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Get employees that can be booked for a service',
+      description:
+        'Public endpoint. Same employees that available slots consider, with their price and duration. userServiceId matches the ids returned by available slots.',
+    }),
+    ApiParam({ name: 'serviceId', type: String }),
+    ApiResponse({ status: 200, description: 'Bookable employees retrieved' }),
+    ApiResponse({ status: 400, description: 'Invalid service id' }),
+    ApiResponse({ status: 404, description: 'Service not found' }),
   );
 }

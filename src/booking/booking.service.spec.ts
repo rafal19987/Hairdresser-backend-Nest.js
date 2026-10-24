@@ -43,6 +43,8 @@ describe('BookingService', () => {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     distinct: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     getRawMany: jest.fn(),
   });
 
@@ -333,5 +335,75 @@ describe('BookingService', () => {
       .mockReturnValue(new Date('2027-06-01T08:00:00.000Z').getTime());
     const summer = await findSlots({ date: '2027-07-01' });
     expect(summer.slots[0].startsAt).toBe('2027-07-01T07:00:00.000Z');
+  });
+
+  describe('findBookableEmployees', () => {
+    it('returns bookable employees with price and duration', async () => {
+      offersQueryBuilder.getRawMany.mockResolvedValue([
+        {
+          userServiceId: 'anna-service',
+          employeeId: 'anna',
+          duration: '45',
+          firstName: 'Anna',
+          lastName: 'Nowak',
+          price: '120.00',
+        },
+      ]);
+
+      const result = await service.findBookableEmployees('service-uuid');
+
+      expect(result.data).toEqual({
+        serviceId: 'service-uuid',
+        employees: [
+          {
+            userServiceId: 'anna-service',
+            employeeId: 'anna',
+            duration: 45,
+            firstName: 'Anna',
+            lastName: 'Nowak',
+            price: 120,
+          },
+        ],
+      });
+      expect(offersQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'user.lastName',
+        'ASC',
+      );
+    });
+
+    it('uses the same bookability rules as slots', async () => {
+      offersQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await service.findBookableEmployees('service-uuid');
+
+      expect(offersQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'userService.active = true',
+      );
+      expect(offersQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'user.active = true',
+      );
+      expect(offersQueryBuilder.innerJoin).toHaveBeenCalledWith(
+        expect.anything(),
+        'calendar',
+        expect.stringContaining('calendar.isDefault = true'),
+      );
+    });
+
+    it('returns empty list when nobody offers existing service', async () => {
+      offersQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      const result = await service.findBookableEmployees('service-uuid');
+
+      expect(result.data.employees).toEqual([]);
+    });
+
+    it('throws when service does not exist or is inactive', async () => {
+      offersQueryBuilder.getRawMany.mockResolvedValue([]);
+      serviceRepository.exists.mockResolvedValue(false);
+
+      await expect(
+        service.findBookableEmployees('service-uuid'),
+      ).rejects.toBeInstanceOf(ServiceNotFoundException);
+    });
   });
 });
