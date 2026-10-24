@@ -5,6 +5,7 @@ type AppointmentFields = Pick<
   | 'uuid'
   | 'name'
   | 'status'
+  | 'type'
   | 'price'
   | 'duration'
   | 'note'
@@ -65,9 +66,15 @@ export interface AppointmentCreatedByResponse {
   lastName: string;
 }
 
+export type AppointmentOverlapResponse = Pick<
+  Appointment,
+  'uuid' | 'name' | 'type' | 'status' | 'scheduledAt' | 'scheduledEndAt'
+>;
+
 export interface AppointmentResponse extends AppointmentFields {
   calendar: AppointmentCalendarResponse | null;
   client: AppointmentClientResponse | null;
   userService: AppointmentUserServiceResponse | null;
   createdBy: AppointmentCreatedByResponse | null;
+  overlaps: AppointmentOverlapResponse[];
 }

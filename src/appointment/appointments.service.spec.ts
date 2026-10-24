@@ -24,6 +24,8 @@ import { AppointmentRelationMismatchException } from '@/appointment/exceptions/a
 import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-found.exception';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
 import { UserServiceNotFoundException } from '@/users-services/exceptions/users-services-not-found.exception';
+import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
+import { DataSource } from 'typeorm';
 
 const NOW = new Date('2026-11-01T08:00:00.000Z');
 
@@ -54,6 +56,7 @@ const createAppointment = (overrides: Partial<Appointment> = {}): Appointment =>
     uuid: 'appointment-uuid',
     name: 'Strzyżenie — Anna Nowak',
     status: AppointmentStatus.PENDING,
+    type: AppointmentType.CLIENT,
     price: 120,
     duration: 60,
     clientEmail: 'jan@example.com',
@@ -110,8 +113,17 @@ describe('AppointmentsService', () => {
   let service: AppointmentsService;
 
   const conflictQueryBuilder = {
+    innerJoin: jest.fn().mockReturnThis(),
+    innerJoinAndSelect: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    getOne: jest.fn(),
+    getMany: jest.fn(),
+  };
+
+  const lockQueryBuilder = {
+    setLock: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
     getOne: jest.fn(),
   };
 
@@ -127,6 +139,18 @@ describe('AppointmentsService', () => {
   const userRepository = { findOneBy: jest.fn() };
   const clientRepository = { findOneBy: jest.fn() };
   const usersServicesRepository = { findOne: jest.fn() };
+
+  const transactionManager = {
+    getRepository: jest.fn(entity =>
+      entity === User
+        ? { createQueryBuilder: () => lockQueryBuilder }
+        : appointmentRepository,
+    ),
+  };
+
+  const dataSource = {
+    transaction: jest.fn(async callback => callback(transactionManager)),
+  };
 
   const mailService = {
     sendAppointmentCreatedToClient: jest.fn().mockResolvedValue(undefined),
@@ -144,6 +168,7 @@ describe('AppointmentsService', () => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
     conflictQueryBuilder.getOne.mockResolvedValue(null);
+    conflictQueryBuilder.getMany.mockResolvedValue([]);
     appointmentRepository.save.mockImplementation(async entity => entity);
     appointmentRepository.create.mockImplementation(data => ({
       uuid: 'new-appointment-uuid',
@@ -165,6 +190,7 @@ describe('AppointmentsService', () => {
           useValue: usersServicesRepository,
         },
         { provide: MailService, useValue: mailService },
+        { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
 
@@ -173,6 +199,186 @@ describe('AppointmentsService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  describe('conflicts and overlaps', () => {
+    const createDto = {
+      userServiceId: 'user-service-uuid',
+      scheduledAt: '2026-11-02T10:00:00.000Z',
+      clientEmail: 'jan@example.com',
+    };
+
+    const internalDto = {
+      calendarId: 'calendar-uuid',
+      ownerId: 'employee-uuid',
+      name: 'Spotkanie z dostawcą',
+      scheduledAt: '2026-11-02T10:00:00.000Z',
+      scheduledEndAt: '2026-11-02T10:45:00.000Z',
+    };
+
+    const ownCalendar = {
+      uuid: 'calendar-uuid',
+      owner: { uuid: 'employee-uuid' },
+    };
+
+    let internalEvent: Appointment;
+
+    beforeEach(() => {
+      internalEvent = createAppointment({
+        uuid: 'internal-uuid',
+        name: 'Szkolenie',
+        type: AppointmentType.INTERNAL,
+        status: AppointmentStatus.CONFIRMED,
+        scheduledAt: new Date('2026-11-02T10:30:00.000Z'),
+        scheduledEndAt: new Date('2026-11-02T12:00:00.000Z'),
+      });
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue(ownCalendar);
+      calendarRepository.findOne.mockResolvedValue(ownCalendar);
+      userRepository.findOneBy.mockResolvedValue({ uuid: 'employee-uuid' });
+    });
+
+    it('checks client conflicts per employee inside locked transaction', async () => {
+      await service.create(createDto);
+
+      expect(dataSource.transaction).toHaveBeenCalled();
+      expect(lockQueryBuilder.setLock).toHaveBeenCalledWith(
+        'pessimistic_write',
+      );
+      expect(lockQueryBuilder.where).toHaveBeenCalledWith(
+        'user.uuid = :employeeUuid',
+        { employeeUuid: 'employee-uuid' },
+      );
+      expect(conflictQueryBuilder.where).toHaveBeenCalledWith(
+        'calendar.owner = :employeeUuid',
+        { employeeUuid: 'employee-uuid' },
+      );
+      expect(conflictQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'appointment.type = :type',
+        { type: AppointmentType.CLIENT },
+      );
+    });
+
+    it('rejects client booking colliding with another client appointment', async () => {
+      conflictQueryBuilder.getOne.mockResolvedValue(createAppointment());
+
+      await expect(service.create(createDto)).rejects.toBeInstanceOf(
+        AppointmentConflictException,
+      );
+      expect(appointmentRepository.save).not.toHaveBeenCalled();
+      expect(mailService.sendAppointmentCreatedToClient).not.toHaveBeenCalled();
+    });
+
+    it('reports internal events overlapping new client booking', async () => {
+      conflictQueryBuilder.getMany.mockResolvedValue([internalEvent]);
+
+      const { data } = await service.create(createDto);
+
+      expect(data.overlaps).toEqual([
+        {
+          uuid: 'internal-uuid',
+          name: 'Szkolenie',
+          type: AppointmentType.INTERNAL,
+          status: AppointmentStatus.CONFIRMED,
+          scheduledAt: internalEvent.scheduledAt,
+          scheduledEndAt: internalEvent.scheduledEndAt,
+        },
+      ]);
+    });
+
+    it('saves internal event without conflict check even when slot is taken', async () => {
+      conflictQueryBuilder.getOne.mockResolvedValue(createAppointment());
+
+      await service.createInternal(internalDto);
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(conflictQueryBuilder.getOne).not.toHaveBeenCalled();
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ type: AppointmentType.INTERNAL }),
+      );
+    });
+
+    it('reports client appointments overlapping new internal event', async () => {
+      conflictQueryBuilder.getMany.mockResolvedValue([createAppointment()]);
+
+      const { data } = await service.createInternal(internalDto);
+
+      expect(data.overlaps).toEqual([
+        expect.objectContaining({
+          uuid: 'appointment-uuid',
+          type: AppointmentType.CLIENT,
+        }),
+      ]);
+    });
+
+    it('moves internal event without conflict check', async () => {
+      appointmentRepository.findOne.mockResolvedValue(internalEvent);
+
+      await service.update('internal-uuid', {
+        scheduledAt: '2026-11-02T11:00:00.000Z',
+      });
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(appointmentRepository.save).toHaveBeenCalled();
+    });
+
+    it('does not check conflicts when client appointment dates do not change', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.update('appointment-uuid', { note: 'Nowa notatka' });
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('reschedules client appointment inside locked transaction', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.reschedule('appointment-uuid', {
+        scheduledAt: '2026-11-03T10:00:00.000Z',
+        scheduledEndAt: '2026-11-03T11:00:00.000Z',
+        rescheduledBy: RescheduledBy.STAFF,
+      });
+
+      expect(dataSource.transaction).toHaveBeenCalled();
+      expect(conflictQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'appointment.uuid != :excludeUuid',
+        { excludeUuid: 'appointment-uuid' },
+      );
+    });
+
+    it('find returns only overlapping events of the same employee', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      conflictQueryBuilder.getMany.mockResolvedValue([
+        createAppointment(),
+        internalEvent,
+        createAppointment({
+          uuid: 'other-employee-uuid',
+          calendar: { uuid: 'other', owner: { uuid: 'other-employee' } },
+        } as Partial<Appointment>),
+        createAppointment({
+          uuid: 'later-uuid',
+          scheduledAt: new Date('2026-11-02T11:00:00.000Z'),
+          scheduledEndAt: new Date('2026-11-02T12:00:00.000Z'),
+        }),
+      ]);
+
+      const { data } = await service.find('appointment-uuid');
+
+      expect(data.overlaps.map(overlap => overlap.uuid)).toEqual([
+        'internal-uuid',
+      ]);
+    });
+
+    it('find skips overlap lookup for cancelled appointment', async () => {
+      appointmentRepository.findOne.mockResolvedValue(
+        createAppointment({ status: AppointmentStatus.CANCELLED }),
+      );
+
+      const { data } = await service.find('appointment-uuid');
+
+      expect(data.overlaps).toEqual([]);
+      expect(conflictQueryBuilder.getMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {

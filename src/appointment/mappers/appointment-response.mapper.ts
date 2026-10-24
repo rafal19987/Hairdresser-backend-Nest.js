@@ -1,8 +1,25 @@
 import { Appointment } from '@/appointment/entities/appointment.entity';
-import { AppointmentResponse } from '@/appointment/interfaces/appointment-response.interface';
+import {
+  AppointmentOverlapResponse,
+  AppointmentResponse,
+} from '@/appointment/interfaces/appointment-response.interface';
+
+export function toAppointmentOverlapResponse(
+  appointment: Appointment,
+): AppointmentOverlapResponse {
+  return {
+    uuid: appointment.uuid,
+    name: appointment.name,
+    type: appointment.type,
+    status: appointment.status,
+    scheduledAt: appointment.scheduledAt,
+    scheduledEndAt: appointment.scheduledEndAt,
+  };
+}
 
 export function toAppointmentResponse(
   appointment: Appointment,
+  overlaps: AppointmentOverlapResponse[] = [],
 ): AppointmentResponse {
   const { calendar, client, userService, createdBy } = appointment;
 
@@ -10,6 +27,7 @@ export function toAppointmentResponse(
     uuid: appointment.uuid,
     name: appointment.name,
     status: appointment.status,
+    type: appointment.type,
     price: appointment.price,
     duration: appointment.duration,
     note: appointment.note,
@@ -70,5 +88,6 @@ export function toAppointmentResponse(
           lastName: createdBy.lastName,
         }
       : null,
+    overlaps,
   };
 }

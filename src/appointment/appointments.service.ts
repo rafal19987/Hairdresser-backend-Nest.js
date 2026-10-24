@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Appointment } from './entities/appointment.entity';
 import { Calendar } from '@/calendar/entities/calendar.entity';
 import { User } from '@/users/entities/user.entity';
@@ -25,8 +25,15 @@ import { AppointmentAlreadyCancelledException } from '@/appointment/exceptions/a
 import { AppointmentConflictException } from '@/appointment/exceptions/appointment-conflict.exception';
 import { AppointmentNotModifiableException } from '@/appointment/exceptions/appointment-not-modifiable.exception';
 import { AppointmentInvalidDateRangeException } from '@/appointment/exceptions/appointment-invalid-date-range.exception';
-import { AppointmentResponse } from '@/appointment/interfaces/appointment-response.interface';
-import { toAppointmentResponse } from '@/appointment/mappers/appointment-response.mapper';
+import {
+  AppointmentOverlapResponse,
+  AppointmentResponse,
+} from '@/appointment/interfaces/appointment-response.interface';
+import {
+  toAppointmentOverlapResponse,
+  toAppointmentResponse,
+} from '@/appointment/mappers/appointment-response.mapper';
+import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 import { AppointmentInPastException } from '@/appointment/exceptions/appointment-in-past.exception';
 import { AppointmentLeadTimeException } from '@/appointment/exceptions/appointment-lead-time.exception';
 import { AppointmentClientEmailRequiredException } from '@/appointment/exceptions/appointment-client-email-required.exception';
@@ -62,6 +69,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     @InjectRepository(UsersServices)
     private readonly usersServicesRepository: Repository<UsersServices>,
     private readonly mailService: MailService,
+    private readonly dataSource: DataSource,
   ) {}
 
   public async findAll(
@@ -73,6 +81,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const qb = this.appointmentRepository
       .createQueryBuilder('appointment')
       .leftJoinAndSelect('appointment.calendar', 'calendar')
+      .leftJoin('calendar.owner', 'calendarOwner')
+      .addSelect('calendarOwner.uuid')
       .leftJoinAndSelect('appointment.client', 'client')
       .leftJoinAndSelect('appointment.userService', 'userService')
       .leftJoinAndSelect('userService.user', 'employee')
@@ -102,7 +112,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const [appointments, total] = await qb.getManyAndCount();
 
     return createPaginatedResponse(
-      appointments.map(toAppointmentResponse),
+      await this._toResponsesWithOverlaps(appointments),
       total,
       paginationParams,
     );
@@ -119,6 +129,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       {
         where: { calendar: { uuid: calendarUuid }, deleted: false },
         relations: [
+          'calendar',
+          'calendar.owner',
           'client',
           'userService',
           'userService.user',
@@ -131,7 +143,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     );
 
     return createPaginatedResponse(
-      appointments.map(toAppointmentResponse),
+      await this._toResponsesWithOverlaps(appointments),
       total,
       paginationParams,
     );
@@ -140,6 +152,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   public async find(uuid: string): Promise<ResponseDto> {
     const appointment = await this._findNotDeleted(uuid, [
       'calendar',
+      'calendar.owner',
       'client',
       'userService',
       'userService.user',
@@ -147,11 +160,9 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       'createdBy',
     ]);
 
-    return ResponseHelper.success(
-      'Appointment found',
-      HttpStatus.OK,
-      toAppointmentResponse(appointment),
-    );
+    const [response] = await this._toResponsesWithOverlaps([appointment]);
+
+    return ResponseHelper.success('Appointment found', HttpStatus.OK, response);
   }
 
   public async create(
@@ -199,8 +210,6 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       scheduledAt.getTime() + userService.duration * 60 * 1000,
     );
 
-    await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
-
     const clientPhone =
       client?.phone ?? createAppointmentDto.clientPhone ?? null;
     const clientName = client
@@ -217,6 +226,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       price: userService.price,
       duration: userService.duration,
       status: AppointmentStatus.PENDING,
+      type: AppointmentType.CLIENT,
       note: createAppointmentDto.note,
       clientEmail,
       clientPhone,
@@ -225,7 +235,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       createdBy: userService.user,
     });
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(appointment, { employeeUuid: userService.user.uuid });
 
     const mailData: AppointmentMailData = {
       clientName,
@@ -250,6 +260,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
+      overlaps: await this._findOverlapsFor(appointment),
     });
   }
 
@@ -303,8 +314,6 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       }
     }
 
-    await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
-
     const appointment = this.appointmentRepository.create({
       name: dto.name,
       calendar,
@@ -313,6 +322,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       price: userService?.price ?? null,
       duration,
       status: AppointmentStatus.CONFIRMED,
+      type: AppointmentType.INTERNAL,
       note: dto.note,
       meetingLink: dto.meetingLink,
       eventLocalization: dto.eventLocalization,
@@ -321,10 +331,11 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       createdBy: owner,
     });
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(appointment);
 
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
+      overlaps: await this._findOverlapsFor(appointment),
     });
   }
 
@@ -332,13 +343,19 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     uuid: string,
     dto: UpdateAppointmentDto,
   ): Promise<ResponseDto> {
-    const appointment = await this._findNotDeleted(uuid, ['calendar']);
+    const appointment = await this._findNotDeleted(uuid, [
+      'calendar',
+      'calendar.owner',
+    ]);
 
     this._assertNotCancelled(appointment);
 
     const previousStatus = appointment.status;
+    const datesChanged = Boolean(
+      dto.scheduledAt || dto.scheduledEndAt || dto.duration !== undefined,
+    );
 
-    if (dto.scheduledAt || dto.scheduledEndAt || dto.duration !== undefined) {
+    if (datesChanged) {
       this._assertNotCompleted(
         appointment,
         'Zakończonej wizyty nie można przełożyć',
@@ -370,13 +387,6 @@ export class AppointmentsService implements AppointmentsServiceInterface {
         throw new AppointmentDurationMismatchException();
       }
 
-      await this._checkConflict(
-        appointment.calendar.uuid,
-        scheduledAt,
-        scheduledEndAt,
-        uuid,
-      );
-
       appointment.scheduledAt = scheduledAt;
       appointment.scheduledEndAt = scheduledEndAt;
       appointment.duration = duration;
@@ -390,7 +400,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     if (dto.eventLocalization !== undefined)
       appointment.eventLocalization = dto.eventLocalization;
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(
+      appointment,
+      datesChanged
+        ? { employeeUuid: appointment.calendar.owner.uuid, excludeUuid: uuid }
+        : undefined,
+    );
 
     if (
       dto.status === AppointmentStatus.CONFIRMED &&
@@ -468,6 +483,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   ): Promise<ResponseDto> {
     const appointment = await this._findNotDeleted(uuid, [
       'calendar',
+      'calendar.owner',
       'client',
       'userService',
       'userService.user',
@@ -484,13 +500,6 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const scheduledEndAt = new Date(dto.scheduledEndAt);
 
     this._assertSchedulable(scheduledAt);
-
-    await this._checkConflict(
-      appointment.calendar.uuid,
-      scheduledAt,
-      scheduledEndAt,
-      uuid,
-    );
 
     const previousScheduledAt = appointment.scheduledAt;
     const previousScheduledEndAt = appointment.scheduledEndAt;
@@ -509,7 +518,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     if (dto.note !== undefined) appointment.note = dto.note;
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(appointment, {
+      employeeUuid: appointment.calendar.owner.uuid,
+      excludeUuid: uuid,
+    });
 
     const mailData: AppointmentRescheduledMailData = {
       clientName: this._getClientName(appointment),
@@ -681,22 +693,55 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     });
   }
 
-  private async _checkConflict(
-    calendarUuid: string,
-    scheduledAt: Date,
-    scheduledEndAt: Date,
-    excludeUuid?: string,
+  private async _save(
+    appointment: Appointment,
+    conflictCheck?: { employeeUuid: string; excludeUuid?: string },
+  ): Promise<Appointment> {
+    if (!conflictCheck || appointment.type !== AppointmentType.CLIENT) {
+      return this.appointmentRepository.save(appointment);
+    }
+
+    return this.dataSource.transaction(async manager => {
+      // Serializes bookings per employee so concurrent requests cannot both pass the conflict check
+      await manager
+        .getRepository(User)
+        .createQueryBuilder('user')
+        .setLock('pessimistic_write')
+        .where('user.uuid = :employeeUuid', {
+          employeeUuid: conflictCheck.employeeUuid,
+        })
+        .getOne();
+
+      await this._checkClientConflict(manager, appointment, conflictCheck);
+
+      return manager.getRepository(Appointment).save(appointment);
+    });
+  }
+
+  private async _checkClientConflict(
+    manager: EntityManager,
+    appointment: Appointment,
+    {
+      employeeUuid,
+      excludeUuid,
+    }: { employeeUuid: string; excludeUuid?: string },
   ): Promise<void> {
-    const qb = this.appointmentRepository
+    const qb = manager
+      .getRepository(Appointment)
       .createQueryBuilder('appointment')
-      .where('appointment.calendar = :calendarUuid', { calendarUuid })
+      .innerJoin('appointment.calendar', 'calendar')
+      .where('calendar.owner = :employeeUuid', { employeeUuid })
+      .andWhere('appointment.type = :type', { type: AppointmentType.CLIENT })
       .andWhere('appointment.status != :cancelled', {
         cancelled: AppointmentStatus.CANCELLED,
       })
       .andWhere('appointment.deleted = false')
       .andWhere(
         '(appointment.scheduledAt < :scheduledEndAt AND appointment.scheduledEndAt > :scheduledAt)',
-        { scheduledAt, scheduledEndAt },
+        {
+          scheduledAt: appointment.scheduledAt,
+          scheduledEndAt: appointment.scheduledEndAt,
+        },
       );
 
     if (excludeUuid) {
@@ -706,5 +751,82 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const conflict = await qb.getOne();
 
     if (conflict) throw new AppointmentConflictException();
+  }
+
+  private async _toResponsesWithOverlaps(
+    appointments: Appointment[],
+  ): Promise<AppointmentResponse[]> {
+    const overlaps = await this._findOverlaps(appointments);
+
+    return appointments.map(appointment =>
+      toAppointmentResponse(appointment, overlaps.get(appointment.uuid)),
+    );
+  }
+
+  private async _findOverlapsFor(
+    appointment: Appointment,
+  ): Promise<AppointmentOverlapResponse[]> {
+    const overlaps = await this._findOverlaps([appointment]);
+
+    return overlaps.get(appointment.uuid) ?? [];
+  }
+
+  private async _findOverlaps(
+    appointments: Appointment[],
+  ): Promise<Map<string, AppointmentOverlapResponse[]>> {
+    const overlaps = new Map<string, AppointmentOverlapResponse[]>();
+
+    const relevant = appointments.filter(
+      appointment =>
+        appointment.status !== AppointmentStatus.CANCELLED &&
+        appointment.calendar?.owner?.uuid,
+    );
+
+    if (!relevant.length) return overlaps;
+
+    const employeeUuids = [
+      ...new Set(relevant.map(appointment => appointment.calendar.owner.uuid)),
+    ];
+    const from = new Date(
+      Math.min(
+        ...relevant.map(appointment => appointment.scheduledAt.getTime()),
+      ),
+    );
+    const to = new Date(
+      Math.max(
+        ...relevant.map(appointment => appointment.scheduledEndAt.getTime()),
+      ),
+    );
+
+    const candidates = await this.appointmentRepository
+      .createQueryBuilder('appointment')
+      .innerJoinAndSelect('appointment.calendar', 'calendar')
+      .innerJoinAndSelect('calendar.owner', 'owner')
+      .where('owner.uuid IN (:...employeeUuids)', { employeeUuids })
+      .andWhere('appointment.status != :cancelled', {
+        cancelled: AppointmentStatus.CANCELLED,
+      })
+      .andWhere('appointment.deleted = false')
+      .andWhere('appointment.scheduledAt < :to', { to })
+      .andWhere('appointment.scheduledEndAt > :from', { from })
+      .getMany();
+
+    for (const appointment of relevant) {
+      overlaps.set(
+        appointment.uuid,
+        candidates
+          .filter(
+            candidate =>
+              candidate.uuid !== appointment.uuid &&
+              candidate.calendar.owner.uuid ===
+                appointment.calendar.owner.uuid &&
+              candidate.scheduledAt < appointment.scheduledEndAt &&
+              candidate.scheduledEndAt > appointment.scheduledAt,
+          )
+          .map(toAppointmentOverlapResponse),
+      );
+    }
+
+    return overlaps;
   }
 }
