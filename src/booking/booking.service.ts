@@ -15,6 +15,14 @@ import {
 } from '@/booking/interfaces/bookable-employees-response.interface';
 import { BookableService } from '@/booking/interfaces/bookable-services-response.interface';
 import { BookingEmployeeUnavailableException } from '@/booking/exceptions/booking-employee-unavailable.exception';
+import { BookingGuestDetailsRequiredException } from '@/booking/exceptions/booking-guest-details-required.exception';
+import { BookingClientAccountUnavailableException } from '@/booking/exceptions/booking-client-account-unavailable.exception';
+import { CreateClientBookingDto } from '@/booking/dto/create-client-booking.dto';
+import {
+  APPOINTMENTS_SERVICE,
+  AppointmentsServiceInterface,
+} from '@/appointment/interfaces/appointments-service.interface';
+import { Client } from '@/clients/entities/client.entity';
 import { Appointment } from '@/appointment/entities/appointment.entity';
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
@@ -59,9 +67,47 @@ export class BookingService implements BookingServiceInterface {
     private readonly usersServicesRepository: Repository<UsersServices>,
     @InjectRepository(Appointment)
     private readonly appointmentRepository: Repository<Appointment>,
+    @InjectRepository(Client)
+    private readonly clientRepository: Repository<Client>,
     @Inject(SALON_SERVICE)
     private readonly salonService: SalonServiceInterface,
+    @Inject(APPOINTMENTS_SERVICE)
+    private readonly appointmentsService: AppointmentsServiceInterface,
   ) {}
+
+  public async createAppointment(
+    dto: CreateClientBookingDto,
+    clientId?: string,
+  ): Promise<ResponseDto> {
+    if (clientId) {
+      const clientExists = await this.clientRepository.exists({
+        where: { uuid: clientId, active: true, emailVerified: true },
+      });
+
+      if (!clientExists) throw new BookingClientAccountUnavailableException();
+    } else if (!dto.firstName || !dto.email) {
+      throw new BookingGuestDetailsRequiredException();
+    }
+
+    const clientName = [dto.firstName, dto.lastName].filter(Boolean).join(' ');
+
+    const { data } = await this.appointmentsService.create(
+      {
+        userServiceId: dto.userServiceId,
+        scheduledAt: dto.startsAt,
+        clientName: clientName || undefined,
+        clientEmail: dto.email,
+        clientPhone: dto.phone,
+        note: dto.note,
+      },
+      { clientUuid: clientId, bookedByClient: true },
+    );
+
+    return ResponseHelper.created('Rezerwacja została przyjęta', {
+      uuid: data.uuid,
+      status: data.status,
+    });
+  }
 
   public async findAvailableSlots({
     serviceId,

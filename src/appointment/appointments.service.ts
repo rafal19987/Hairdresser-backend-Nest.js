@@ -222,7 +222,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       scheduledAt.getTime() + userService.duration * MINUTE_MS,
     );
 
-    await this._assertClientBookable(
+    const salon = await this._assertClientBookable(
       scheduledAt,
       scheduledEndAt,
       options.bookedByClient,
@@ -230,9 +230,14 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientPhone =
       client?.phone ?? createAppointmentDto.clientPhone ?? null;
+    const guestName = client ? null : (createAppointmentDto.clientName ?? null);
     const clientName = client
       ? `${client.firstName} ${client.lastName}`
-      : (clientEmail ?? 'Klient');
+      : (guestName ?? clientEmail);
+    const status =
+      options.bookedByClient && salon.autoConfirmClientBookings
+        ? AppointmentStatus.CONFIRMED
+        : AppointmentStatus.PENDING;
 
     const name = `${userService.service.name} — ${userService.user.firstName} ${userService.user.lastName}`;
 
@@ -243,9 +248,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       userService,
       price: userService.price,
       duration: userService.duration,
-      status: AppointmentStatus.PENDING,
+      status,
       type: AppointmentType.CLIENT,
       note: createAppointmentDto.note,
+      clientName: guestName,
       clientEmail,
       clientPhone,
       scheduledAt,
@@ -266,7 +272,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     };
 
     this._sendMailSafe(() =>
-      this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
+      status === AppointmentStatus.CONFIRMED
+        ? this.mailService.sendAppointmentConfirmedToClient(
+            clientEmail,
+            mailData,
+          )
+        : this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
     );
 
     this._sendMailSafe(() =>
@@ -278,6 +289,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
+      status,
       overlaps: await this._findOverlapsFor(appointment),
     });
   }
@@ -631,12 +643,14 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     scheduledAt: Date,
     scheduledEndAt: Date,
     bookedByClient = false,
-  ): Promise<void> {
+  ): Promise<Salon> {
     const salon = await this.salonService.getBookingSettings();
 
     if (bookedByClient) this._assertWithinBookingWindow(salon, scheduledAt);
 
     await this._assertWithinOpeningHours(salon, scheduledAt, scheduledEndAt);
+
+    return salon;
   }
 
   private _assertWithinBookingWindow(salon: Salon, scheduledAt: Date): void {
@@ -757,7 +771,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     if (appointment.client?.firstName) {
       return `${appointment.client.firstName} ${appointment.client.lastName}`;
     }
-    return appointment.clientEmail ?? 'Klient';
+    return appointment.clientName ?? appointment.clientEmail ?? 'Klient';
   }
 
   private _getEmployeeName(appointment: Appointment): string {

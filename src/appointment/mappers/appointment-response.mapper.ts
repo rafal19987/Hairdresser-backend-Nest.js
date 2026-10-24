@@ -33,6 +33,7 @@ export function toAppointmentResponse(
     note: appointment.note,
     meetingLink: appointment.meetingLink,
     eventLocalization: appointment.eventLocalization,
+    clientName: appointment.clientName,
     clientEmail: appointment.clientEmail,
     clientPhone: appointment.clientPhone,
     scheduledAt: appointment.scheduledAt,

@@ -94,6 +94,10 @@ export class Appointment {
   @Column({ type: 'varchar', nullable: true })
   eventLocalization?: string;
 
+  // Guest name; registered clients are identified by the client relation
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  clientName?: string | null;
+
   @Column({ type: 'varchar', nullable: true })
   clientEmail?: string;
 

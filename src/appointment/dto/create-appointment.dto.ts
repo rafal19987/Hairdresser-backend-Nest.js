@@ -23,6 +23,16 @@ export class CreateAppointmentDto {
   scheduledAt: string;
 
   @ApiProperty({
+    example: 'Jan Kowalski',
+    required: false,
+    description: 'Imię i nazwisko klienta bez konta',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  clientName?: string;
+
+  @ApiProperty({
     example: 'jan@example.com',
     required: false,
     description:

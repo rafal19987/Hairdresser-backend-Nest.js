@@ -11,6 +11,7 @@ type AppointmentFields = Pick<
   | 'note'
   | 'meetingLink'
   | 'eventLocalization'
+  | 'clientName'
   | 'clientEmail'
   | 'clientPhone'
   | 'scheduledAt'

@@ -8,6 +8,11 @@ import { UsersServices } from '@/users-services/entities/users-services.entity';
 import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
 import { ServiceNotFoundException } from '@/services/exceptions/service-not-found.exception';
 import { BookingEmployeeUnavailableException } from '@/booking/exceptions/booking-employee-unavailable.exception';
+import { BookingGuestDetailsRequiredException } from '@/booking/exceptions/booking-guest-details-required.exception';
+import { BookingClientAccountUnavailableException } from '@/booking/exceptions/booking-client-account-unavailable.exception';
+import { Client } from '@/clients/entities/client.entity';
+import { APPOINTMENTS_SERVICE } from '@/appointment/interfaces/appointments-service.interface';
+import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 
 // Sunday; Warsaw is UTC+1 in November
 const NOW = new Date('2026-11-01T08:00:00.000Z');
@@ -64,6 +69,8 @@ describe('BookingService', () => {
     getBookingSettings: jest.fn(),
     findOpeningRanges: jest.fn(),
   };
+  const clientRepository = { exists: jest.fn() };
+  const appointmentsService = { create: jest.fn() };
 
   const findSlots = async (query: Record<string, string> = {}) =>
     (
@@ -101,6 +108,8 @@ describe('BookingService', () => {
           useValue: appointmentRepository,
         },
         { provide: SALON_SERVICE, useValue: salonService },
+        { provide: getRepositoryToken(Client), useValue: clientRepository },
+        { provide: APPOINTMENTS_SERVICE, useValue: appointmentsService },
       ],
     }).compile();
 
@@ -451,6 +460,92 @@ describe('BookingService', () => {
       expect(offersQueryBuilder.where).toHaveBeenCalledWith(
         'service.active = true',
       );
+    });
+  });
+
+  describe('createAppointment', () => {
+    const booking = {
+      userServiceId: 'anna-service',
+      startsAt: '2026-11-02T10:00:00.000Z',
+    };
+
+    beforeEach(() => {
+      appointmentsService.create.mockResolvedValue({
+        statusCode: 201,
+        data: {
+          uuid: 'appointment-uuid',
+          status: AppointmentStatus.PENDING,
+          overlaps: [{ uuid: 'internal-event', name: 'Szkolenie' }],
+        },
+      });
+      clientRepository.exists.mockResolvedValue(true);
+    });
+
+    it('books as guest with client rules', async () => {
+      await service.createAppointment({
+        ...booking,
+        firstName: 'Jan',
+        lastName: 'Kowalski',
+        email: 'jan@example.com',
+        phone: '500600700',
+        note: 'Krótko',
+      });
+
+      expect(appointmentsService.create).toHaveBeenCalledWith(
+        {
+          userServiceId: 'anna-service',
+          scheduledAt: '2026-11-02T10:00:00.000Z',
+          clientName: 'Jan Kowalski',
+          clientEmail: 'jan@example.com',
+          clientPhone: '500600700',
+          note: 'Krótko',
+        },
+        { clientUuid: undefined, bookedByClient: true },
+      );
+    });
+
+    it('does not expose overlapping internal events', async () => {
+      const result = await service.createAppointment({
+        ...booking,
+        firstName: 'Jan',
+        email: 'jan@example.com',
+      });
+
+      expect(result.data).toEqual({
+        uuid: 'appointment-uuid',
+        status: AppointmentStatus.PENDING,
+      });
+    });
+
+    it.each([{ firstName: 'Jan' }, { email: 'jan@example.com' }, {}])(
+      'requires guest name and email (%o)',
+      async details => {
+        await expect(
+          service.createAppointment({ ...booking, ...details }),
+        ).rejects.toBeInstanceOf(BookingGuestDetailsRequiredException);
+        expect(appointmentsService.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('books for logged in client without guest details', async () => {
+      await service.createAppointment(booking, 'client-uuid');
+
+      expect(clientRepository.exists).toHaveBeenCalledWith({
+        where: { uuid: 'client-uuid', active: true, emailVerified: true },
+      });
+      expect(appointmentsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ clientName: undefined }),
+        { clientUuid: 'client-uuid', bookedByClient: true },
+      );
+    });
+
+    it('rejects inactive or unverified client account', async () => {
+      clientRepository.exists.mockResolvedValue(false);
+
+      await expect(
+        service.createAppointment(booking, 'client-uuid'),
+      ).rejects.toBeInstanceOf(BookingClientAccountUnavailableException);
+      expect(appointmentsService.create).not.toHaveBeenCalled();
     });
   });
 });

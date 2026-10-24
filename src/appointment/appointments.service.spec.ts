@@ -1298,6 +1298,93 @@ describe('AppointmentsService', () => {
     });
   });
 
+  describe('client bookings', () => {
+    const dto = {
+      userServiceId: 'user-service-uuid',
+      scheduledAt: '2026-11-02T10:00:00.000Z',
+      clientEmail: 'jan@example.com',
+      clientName: 'Jan Kowalski',
+    };
+
+    beforeEach(() => {
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue({ uuid: 'calendar-uuid' });
+    });
+
+    it('stores guest name and uses it in mails', async () => {
+      await service.create(dto, { bookedByClient: true });
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ clientName: 'Jan Kowalski' }),
+      );
+      expect(mailService.sendAppointmentCreatedToEmployee).toHaveBeenCalledWith(
+        'anna@hairdresser.pl',
+        expect.objectContaining({ clientName: 'Jan Kowalski' }),
+      );
+    });
+
+    it('ignores guest name when booking is linked to client account', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        firstName: 'Ewa',
+        lastName: 'Nowak',
+        email: 'ewa@example.com',
+      });
+
+      await service.create(dto, {
+        clientUuid: 'client-uuid',
+        bookedByClient: true,
+      });
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientName: null,
+          clientEmail: 'ewa@example.com',
+        }),
+      );
+    });
+
+    it('keeps client booking pending without auto confirmation', async () => {
+      const result = await service.create(dto, { bookedByClient: true });
+
+      expect(result.data.status).toBe(AppointmentStatus.PENDING);
+      expect(mailService.sendAppointmentCreatedToClient).toHaveBeenCalled();
+      expect(
+        mailService.sendAppointmentConfirmedToClient,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('confirms client booking when salon auto confirms', async () => {
+      salonService.getBookingSettings.mockResolvedValue({
+        ...salon,
+        autoConfirmClientBookings: true,
+      });
+
+      const result = await service.create(dto, { bookedByClient: true });
+
+      expect(result.data.status).toBe(AppointmentStatus.CONFIRMED);
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: AppointmentStatus.CONFIRMED }),
+      );
+      expect(mailService.sendAppointmentConfirmedToClient).toHaveBeenCalledWith(
+        'jan@example.com',
+        expect.any(Object),
+      );
+      expect(mailService.sendAppointmentCreatedToClient).not.toHaveBeenCalled();
+    });
+
+    it('does not auto confirm bookings made by staff', async () => {
+      salonService.getBookingSettings.mockResolvedValue({
+        ...salon,
+        autoConfirmClientBookings: true,
+      });
+
+      const result = await service.create(dto);
+
+      expect(result.data.status).toBe(AppointmentStatus.PENDING);
+    });
+  });
+
   describe('remove', () => {
     it('marks appointment as deleted', async () => {
       appointmentRepository.findOne.mockResolvedValue(createAppointment());

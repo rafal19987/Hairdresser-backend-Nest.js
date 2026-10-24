@@ -1,5 +1,13 @@
 import { applyDecorators } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
+import { CreateClientBookingDto } from '@/booking/dto/create-client-booking.dto';
 
 export function ApiFindAvailableSlots() {
   return applyDecorators(
@@ -43,5 +51,30 @@ export function ApiFindBookableServices() {
         'Public endpoint. Active services offered by at least one bookable employee, with price and duration ranges across employees.',
     }),
     ApiResponse({ status: 200, description: 'Bookable services retrieved' }),
+  );
+}
+
+export function ApiCreateClientBooking() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Book an appointment as a client',
+      description:
+        'Public endpoint. Guests send their name and email; a logged-in client sends the client access token instead. Status is confirmed when the salon auto-confirms client bookings, pending otherwise. Limited to 5 requests per minute per IP.',
+    }),
+    ApiBearerAuth('JWT-auth'),
+    ApiBody({ type: CreateClientBookingDto }),
+    ApiResponse({ status: 201, description: 'Booking accepted' }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Missing guest details, slot outside opening hours, too soon or too far ahead',
+    }),
+    ApiResponse({
+      status: 401,
+      description: 'Invalid client token or inactive client account',
+    }),
+    ApiResponse({ status: 404, description: 'Service assignment not found' }),
+    ApiResponse({ status: 409, description: 'Slot is already taken' }),
+    ApiResponse({ status: 429, description: 'Too many booking attempts' }),
   );
 }
