@@ -15,6 +15,9 @@ import { MailModule } from '@/mail/mail.module';
 import { BookingManageController } from '@/booking/booking-manage.controller';
 import { BookingManageService } from '@/booking/booking-manage.service';
 import { BOOKING_MANAGE_SERVICE } from '@/booking/interfaces/booking-manage-service.interface';
+import { BookingAccountController } from '@/booking/booking-account.controller';
+import { BookingAccountService } from '@/booking/booking-account.service';
+import { BOOKING_ACCOUNT_SERVICE } from '@/booking/interfaces/booking-account-service.interface';
 
 @Module({
   imports: [
@@ -35,8 +38,16 @@ import { BOOKING_MANAGE_SERVICE } from '@/booking/interfaces/booking-manage-serv
       provide: BOOKING_MANAGE_SERVICE,
       useClass: BookingManageService,
     },
+    {
+      provide: BOOKING_ACCOUNT_SERVICE,
+      useClass: BookingAccountService,
+    },
   ],
-  controllers: [BookingController, BookingManageController],
+  controllers: [
+    BookingController,
+    BookingManageController,
+    BookingAccountController,
+  ],
   exports: [BOOKING_SERVICE],
 })
 export class BookingModule {}

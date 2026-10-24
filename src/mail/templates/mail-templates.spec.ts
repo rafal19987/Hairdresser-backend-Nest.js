@@ -182,4 +182,18 @@ describe('MailTemplates', () => {
     expect(template.subject).toBe('Twoje wizyty — Rêve');
     expect(template.html).toContain('Zobacz swoje wizyty');
   });
+
+  it('adds account link next to manage link', () => {
+    const { html } = MailTemplates.appointmentConfirmedToClient(
+      {
+        ...mailData,
+        manageUrl: 'https://reve.pl/moje-wizyty/abc',
+        accountUrl: 'https://reve.pl/konto',
+      },
+      branding,
+    );
+
+    expect(html).toContain('Zarządzaj swoimi wizytami');
+    expect(html).toContain('Przejdź do swojego konta');
+  });
 });

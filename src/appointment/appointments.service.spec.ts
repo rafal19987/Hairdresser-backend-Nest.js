@@ -28,6 +28,7 @@ import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 import { DataSource } from 'typeorm';
 import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
 import { BookingAccessService } from '@/booking-access/booking-access.service';
+import { ConfigService } from '@nestjs/config';
 import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
 import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
 
@@ -220,6 +221,15 @@ describe('AppointmentsService', () => {
         { provide: DataSource, useValue: dataSource },
         { provide: SALON_SERVICE, useValue: salonService },
         { provide: BookingAccessService, useValue: bookingAccessService },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              key === 'CLIENT_ACCOUNT_URL'
+                ? 'https://reve.pl/konto'
+                : undefined,
+          },
+        },
       ],
     }).compile();
 
@@ -1443,6 +1453,34 @@ describe('AppointmentsService', () => {
       expect(
         mailService.sendAppointmentCancelledToClient.mock.calls[0][1].manageUrl,
       ).toBe('https://reve.pl/moje-wizyty/token');
+    });
+
+    it('adds account link only for appointments of client accounts', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        firstName: 'Ewa',
+        lastName: 'Nowak',
+        email: 'ewa@example.com',
+      });
+
+      await service.create(
+        {
+          userServiceId: 'user-service-uuid',
+          scheduledAt: '2026-11-02T10:00:00.000Z',
+        },
+        { clientUuid: 'client-uuid' },
+      );
+      await service.create({
+        userServiceId: 'user-service-uuid',
+        scheduledAt: '2026-11-03T10:00:00.000Z',
+        clientEmail: 'jan@example.com',
+      });
+      await flushMails();
+
+      const [accountMail, guestMail] =
+        mailService.sendAppointmentCreatedToClient.mock.calls;
+      expect(accountMail[1].accountUrl).toBe('https://reve.pl/konto');
+      expect(guestMail[1].accountUrl).toBeUndefined();
     });
 
     it('still sends client mail when link cannot be created', async () => {

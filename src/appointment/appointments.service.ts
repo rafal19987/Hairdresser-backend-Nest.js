@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Appointment } from './entities/appointment.entity';
@@ -85,6 +86,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     @Inject(SALON_SERVICE)
     private readonly salonService: SalonServiceInterface,
     private readonly bookingAccessService: BookingAccessService,
+    private readonly configService: ConfigService,
   ) {}
 
   public async findAll(
@@ -274,10 +276,14 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       note: createAppointmentDto.note,
     };
 
-    this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
-      status === AppointmentStatus.CONFIRMED
-        ? this.mailService.sendAppointmentConfirmedToClient(email, data)
-        : this.mailService.sendAppointmentCreatedToClient(email, data),
+    this._sendClientMailSafe(
+      clientEmail,
+      mailData,
+      (email, data) =>
+        status === AppointmentStatus.CONFIRMED
+          ? this.mailService.sendAppointmentConfirmedToClient(email, data)
+          : this.mailService.sendAppointmentCreatedToClient(email, data),
+      Boolean(client),
     );
 
     this._sendMailSafe(() =>
@@ -492,8 +498,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
-        this.mailService.sendAppointmentCancelledToClient(email, data),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentCancelledToClient(email, data),
+        Boolean(appointment.client),
       );
     }
 
@@ -578,8 +588,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
-        this.mailService.sendAppointmentRescheduledToClient(email, data),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentRescheduledToClient(email, data),
+        Boolean(appointment.client),
       );
     }
 
@@ -757,8 +771,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const clientEmail =
       fullAppointment.client?.email ?? fullAppointment.clientEmail;
     if (clientEmail) {
-      this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
-        this.mailService.sendAppointmentConfirmedToClient(email, data),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentConfirmedToClient(email, data),
+        Boolean(fullAppointment.client),
       );
     }
   }
@@ -787,10 +805,19 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     email: string,
     mailData: T,
     send: (email: string, data: T) => Promise<void>,
+    hasAccount = false,
   ): void {
     this._sendMailSafe(async () => {
       const manageUrl = await this.bookingAccessService.createManageUrl(email);
-      await send(email, { ...mailData, manageUrl: manageUrl ?? undefined });
+      const accountUrl = hasAccount
+        ? this.configService.get<string>('CLIENT_ACCOUNT_URL')
+        : undefined;
+
+      await send(email, {
+        ...mailData,
+        manageUrl: manageUrl ?? undefined,
+        accountUrl: accountUrl || undefined,
+      });
     });
   }
 

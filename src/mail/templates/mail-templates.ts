@@ -22,10 +22,15 @@ const footer = ({ salonName, email, phone }: MailBranding): string => {
     `;
 };
 
-const manageLink = (manageUrl?: string): string =>
-  manageUrl
-    ? `<p><a href="${escapeHtml(manageUrl)}">Zarządzaj swoimi wizytami</a> — tutaj sprawdzisz, przełożysz lub anulujesz wizytę.</p>`
-    : '';
+const manageLinks = ({ manageUrl, accountUrl }: AppointmentMailData): string =>
+  [
+    manageUrl &&
+      `<p><a href="${escapeHtml(manageUrl)}">Zarządzaj swoimi wizytami</a> — tutaj sprawdzisz, przełożysz lub anulujesz wizytę.</p>`,
+    accountUrl &&
+      `<p><a href="${escapeHtml(accountUrl)}">Przejdź do swojego konta</a></p>`,
+  ]
+    .filter(Boolean)
+    .join('');
 
 export const MailTemplates = {
   bookingManageLink: (manageUrl: string, branding: MailBranding) => ({
@@ -81,7 +86,7 @@ export const MailTemplates = {
         ${data.note ? `<tr><td><strong>Notatka:</strong></td><td>${escapeHtml(data.note)}</td></tr>` : ''}
       </table>
       <p>O potwierdzeniu wizyty poinformujemy Cię osobnym mailem.</p>
-      ${manageLink(data.manageUrl)}
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),
@@ -120,7 +125,7 @@ export const MailTemplates = {
         <tr><td><strong>Cena:</strong></td><td>${data.price} zł</td></tr>
       </table>
       <p>Do zobaczenia!</p>
-      ${manageLink(data.manageUrl)}
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),
@@ -140,7 +145,7 @@ export const MailTemplates = {
         ${data.cancellationReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.cancellationReason)}</td></tr>` : ''}
       </table>
       <p>Jeśli chcesz umówić nową wizytę, zapraszamy na naszą stronę.</p>
-      ${manageLink(data.manageUrl)}
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),
@@ -178,7 +183,7 @@ export const MailTemplates = {
         <tr><td><strong>Przełożono przez:</strong></td><td>${data.rescheduledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
         ${data.rescheduleReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.rescheduleReason)}</td></tr>` : ''}
       </table>
-      ${manageLink(data.manageUrl)}
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),

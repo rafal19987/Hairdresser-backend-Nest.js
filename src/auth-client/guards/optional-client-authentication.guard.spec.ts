@@ -1,7 +1,10 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { OptionalClientAuthenticationGuard } from './optional-client-authentication.guard';
+import {
+  ClientAuthenticationGuard,
+  OptionalClientAuthenticationGuard,
+} from './optional-client-authentication.guard';
 
 const CLIENT_SECRET = 'client-secret';
 const STAFF_SECRET = 'staff-secret';
@@ -75,5 +78,31 @@ describe('OptionalClientAuthenticationGuard', () => {
     const { context } = contextFor(`Bearer ${token}`);
 
     expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+  });
+
+  describe('ClientAuthenticationGuard', () => {
+    const requiredGuard = new ClientAuthenticationGuard(
+      jwtService,
+      configService,
+    );
+
+    it('rejects request without token', () => {
+      const { context } = contextFor();
+
+      expect(() => requiredGuard.canActivate(context)).toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('accepts valid client token', () => {
+      const token = jwtService.sign(
+        { clientId: 'client-uuid', type: 'client' },
+        { secret: CLIENT_SECRET },
+      );
+      const { request, context } = contextFor(`Bearer ${token}`);
+
+      expect(requiredGuard.canActivate(context)).toBe(true);
+      expect(request.clientId).toBe('client-uuid');
+    });
   });
 });

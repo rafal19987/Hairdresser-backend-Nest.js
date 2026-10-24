@@ -60,6 +60,8 @@ export interface AppointmentMailData {
   note?: string;
   // Link to the client page with their appointments
   manageUrl?: string;
+  // Present only when the appointment belongs to a client account
+  accountUrl?: string;
 }
 
 export interface AppointmentCancelledMailData extends AppointmentMailData {

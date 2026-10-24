@@ -14,6 +14,8 @@ import {
 // Guests pass through; an invalid token is rejected instead of silently treated as a guest
 @Injectable()
 export class OptionalClientAuthenticationGuard implements CanActivate {
+  protected readonly required: boolean = false;
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -23,7 +25,10 @@ export class OptionalClientAuthenticationGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const [scheme, token] = (request.headers['authorization'] ?? '').split(' ');
 
-    if (!token) return true;
+    if (!token) {
+      if (this.required) throw new UnauthorizedException('Token not provided');
+      return true;
+    }
 
     try {
       const payload = this.jwtService.verify(token, {
@@ -40,4 +45,9 @@ export class OptionalClientAuthenticationGuard implements CanActivate {
       throw new UnauthorizedException('Invalid client token');
     }
   }
+}
+
+@Injectable()
+export class ClientAuthenticationGuard extends OptionalClientAuthenticationGuard {
+  protected readonly required = true;
 }
