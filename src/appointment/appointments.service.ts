@@ -16,7 +16,10 @@ import { ResponseHelper } from '@/common/helpers/response.helper';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { createPaginatedResponse } from '@/common/helpers/pagination.helper';
-import { AppointmentsServiceInterface } from '@/appointment/interfaces/appointments-service.interface';
+import {
+  AppointmentsServiceInterface,
+  CreateAppointmentOptions,
+} from '@/appointment/interfaces/appointments-service.interface';
 import { AppointmentNotFoundException } from '@/appointment/exceptions/appointment-not-found.exception';
 import { AppointmentAlreadyCancelledException } from '@/appointment/exceptions/appointment-already-cancelled.exception';
 import { AppointmentConflictException } from '@/appointment/exceptions/appointment-conflict.exception';
@@ -24,6 +27,15 @@ import { AppointmentNotModifiableException } from '@/appointment/exceptions/appo
 import { AppointmentInvalidDateRangeException } from '@/appointment/exceptions/appointment-invalid-date-range.exception';
 import { AppointmentResponse } from '@/appointment/interfaces/appointment-response.interface';
 import { toAppointmentResponse } from '@/appointment/mappers/appointment-response.mapper';
+import { AppointmentInPastException } from '@/appointment/exceptions/appointment-in-past.exception';
+import { AppointmentLeadTimeException } from '@/appointment/exceptions/appointment-lead-time.exception';
+import { AppointmentClientEmailRequiredException } from '@/appointment/exceptions/appointment-client-email-required.exception';
+import { AppointmentUnavailableException } from '@/appointment/exceptions/appointment-unavailable.exception';
+import { AppointmentDurationMismatchException } from '@/appointment/exceptions/appointment-duration-mismatch.exception';
+import { AppointmentRelationMismatchException } from '@/appointment/exceptions/appointment-relation-mismatch.exception';
+import { CLIENT_BOOKING_MIN_LEAD_TIME_MINUTES } from '@/appointment/constants';
+import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
+import { UserServiceNotFoundException } from '@/users-services/exceptions/users-services-not-found.exception';
 import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-found.exception';
 import { UserNotFoundException } from '@/users/exceptions/user-not-found.exception';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
@@ -144,8 +156,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
   public async create(
     createAppointmentDto: CreateAppointmentDto,
-    clientUuid?: string,
+    options: CreateAppointmentOptions = {},
   ): Promise<ResponseDto> {
+    const scheduledAt = new Date(createAppointmentDto.scheduledAt);
+
+    this._assertSchedulable(scheduledAt, options.bookedByClient);
+
     const userService = await this.usersServicesRepository.findOne({
       where: { uuid: createAppointmentDto.userServiceId },
       relations: ['user', 'service'],
@@ -157,9 +173,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       );
     }
 
+    this._assertUserServiceAvailable(userService);
+
     const calendar = await this.calendarRepository.findOneBy({
       owner: { uuid: userService.user.uuid },
       isDefault: true,
+      active: true,
       deleted: false,
     });
 
@@ -169,20 +188,19 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       );
     }
 
-    const scheduledAt = new Date(createAppointmentDto.scheduledAt);
+    const client = await this._findClient(options.clientUuid);
+
+    const clientEmail =
+      client?.email ?? createAppointmentDto.clientEmail ?? null;
+
+    if (!clientEmail) throw new AppointmentClientEmailRequiredException();
+
     const scheduledEndAt = new Date(
       scheduledAt.getTime() + userService.duration * 60 * 1000,
     );
 
     await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
 
-    let client: Client | null = null;
-    if (clientUuid) {
-      client = await this.clientRepository.findOneBy({ uuid: clientUuid });
-    }
-
-    const clientEmail =
-      client?.email ?? createAppointmentDto.clientEmail ?? null;
     const clientPhone =
       client?.phone ?? createAppointmentDto.clientPhone ?? null;
     const clientName = client
@@ -219,11 +237,9 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       note: createAppointmentDto.note,
     };
 
-    if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
-      );
-    }
+    this._sendMailSafe(() =>
+      this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
+    );
 
     this._sendMailSafe(() =>
       this.mailService.sendAppointmentCreatedToEmployee(
@@ -240,45 +256,61 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   public async createInternal(
     dto: CreateInternalAppointmentDto,
   ): Promise<ResponseDto> {
+    const scheduledAt = new Date(dto.scheduledAt);
+    const scheduledEndAt = new Date(dto.scheduledEndAt);
+
+    this._assertSchedulable(scheduledAt);
+
+    const duration = this._getDurationInMinutes(scheduledAt, scheduledEndAt);
+
+    if (dto.duration !== undefined && dto.duration !== duration) {
+      throw new AppointmentDurationMismatchException();
+    }
+
     const owner = await this.userRepository.findOneBy({ uuid: dto.ownerId });
     if (!owner)
       throw new UserNotFoundException('Pracownik nie został znaleziony');
 
-    const calendar = await this.calendarRepository.findOneBy({
-      uuid: dto.calendarId,
+    const calendar = await this.calendarRepository.findOne({
+      where: { uuid: dto.calendarId, active: true, deleted: false },
+      relations: ['owner'],
     });
     if (!calendar)
       throw new CalendarNotFoundException('Kalendarz nie został znaleziony');
 
-    const scheduledAt = new Date(dto.scheduledAt);
-    const scheduledEndAt = new Date(dto.scheduledEndAt);
-
-    await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
-
-    let client: Client | null = null;
-    if (dto.clientId) {
-      client = await this.clientRepository.findOneBy({ uuid: dto.clientId });
+    if (calendar.owner?.uuid !== owner.uuid) {
+      throw new AppointmentRelationMismatchException(
+        'Kalendarz nie należy do wskazanego pracownika',
+      );
     }
 
+    const client = await this._findClient(dto.clientId);
+
     let userService: UsersServices | null = null;
-    let price: number | null = null;
-    let duration: number | null = dto.duration ?? null;
 
     if (dto.userServiceId) {
       userService = await this.usersServicesRepository.findOne({
         where: { uuid: dto.userServiceId },
-        relations: ['service'],
+        relations: ['user', 'service'],
       });
-      price = userService?.price ?? null;
-      duration = duration ?? userService?.duration ?? null;
+
+      if (!userService) throw new UserServiceNotFoundException();
+
+      if (userService.user?.uuid !== owner.uuid) {
+        throw new AppointmentRelationMismatchException(
+          'Usługa nie jest przypisana do wskazanego pracownika',
+        );
+      }
     }
+
+    await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
 
     const appointment = this.appointmentRepository.create({
       name: dto.name,
       calendar,
       client,
       userService,
-      price,
+      price: userService?.price ?? null,
       duration,
       status: AppointmentStatus.CONFIRMED,
       note: dto.note,
@@ -306,7 +338,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const previousStatus = appointment.status;
 
-    if (dto.scheduledAt || dto.scheduledEndAt) {
+    if (dto.scheduledAt || dto.scheduledEndAt || dto.duration !== undefined) {
       this._assertNotCompleted(
         appointment,
         'Zakończonej wizyty nie można przełożyć',
@@ -316,12 +348,26 @@ export class AppointmentsService implements AppointmentsServiceInterface {
         ? new Date(dto.scheduledAt)
         : appointment.scheduledAt;
 
-      const scheduledEndAt = dto.scheduledEndAt
-        ? new Date(dto.scheduledEndAt)
-        : appointment.scheduledEndAt;
+      if (dto.scheduledAt) this._assertSchedulable(scheduledAt);
+
+      let scheduledEndAt = appointment.scheduledEndAt;
+
+      if (dto.scheduledEndAt) {
+        scheduledEndAt = new Date(dto.scheduledEndAt);
+      } else if (dto.duration !== undefined) {
+        scheduledEndAt = new Date(
+          scheduledAt.getTime() + dto.duration * 60 * 1000,
+        );
+      }
 
       if (scheduledEndAt <= scheduledAt) {
         throw new AppointmentInvalidDateRangeException();
+      }
+
+      const duration = this._getDurationInMinutes(scheduledAt, scheduledEndAt);
+
+      if (dto.duration !== undefined && dto.duration !== duration) {
+        throw new AppointmentDurationMismatchException();
       }
 
       await this._checkConflict(
@@ -333,11 +379,11 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
       appointment.scheduledAt = scheduledAt;
       appointment.scheduledEndAt = scheduledEndAt;
+      appointment.duration = duration;
     }
 
     if (dto.name) appointment.name = dto.name;
     if (dto.status) appointment.status = dto.status;
-    if (dto.duration !== undefined) appointment.duration = dto.duration;
     if (dto.note !== undefined) appointment.note = dto.note;
     if (dto.meetingLink !== undefined)
       appointment.meetingLink = dto.meetingLink;
@@ -437,6 +483,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const scheduledAt = new Date(dto.scheduledAt);
     const scheduledEndAt = new Date(dto.scheduledEndAt);
 
+    this._assertSchedulable(scheduledAt);
+
     await this._checkConflict(
       appointment.calendar.uuid,
       scheduledAt,
@@ -451,6 +499,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     appointment.previousScheduledEndAt = previousScheduledEndAt;
     appointment.scheduledAt = scheduledAt;
     appointment.scheduledEndAt = scheduledEndAt;
+    appointment.duration = this._getDurationInMinutes(
+      scheduledAt,
+      scheduledEndAt,
+    );
     appointment.status = AppointmentStatus.RESCHEDULED;
     appointment.rescheduledBy = dto.rescheduledBy;
     appointment.rescheduledAt = new Date();
@@ -528,6 +580,51 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     if (appointment.status === AppointmentStatus.COMPLETED) {
       throw new AppointmentNotModifiableException(message);
     }
+  }
+
+  private _assertSchedulable(scheduledAt: Date, bookedByClient = false): void {
+    const now = Date.now();
+
+    if (scheduledAt.getTime() <= now) throw new AppointmentInPastException();
+
+    const minLeadTimeMs = CLIENT_BOOKING_MIN_LEAD_TIME_MINUTES * 60 * 1000;
+
+    if (bookedByClient && scheduledAt.getTime() < now + minLeadTimeMs) {
+      throw new AppointmentLeadTimeException();
+    }
+  }
+
+  private _assertUserServiceAvailable(userService: UsersServices): void {
+    const { service, user } = userService;
+
+    if (!userService.active || !service?.active || service.deleted) {
+      throw new AppointmentUnavailableException();
+    }
+
+    if (!user?.active || user.deleted) {
+      throw new AppointmentUnavailableException(
+        'Wybrany pracownik jest niedostępny',
+      );
+    }
+  }
+
+  private async _findClient(uuid?: string): Promise<Client | null> {
+    if (!uuid) return null;
+
+    const client = await this.clientRepository.findOneBy({ uuid });
+
+    if (!client) throw new ClientNotFoundException();
+
+    return client;
+  }
+
+  private _getDurationInMinutes(
+    scheduledAt: Date,
+    scheduledEndAt: Date,
+  ): number {
+    return Math.round(
+      (scheduledEndAt.getTime() - scheduledAt.getTime()) / 60000,
+    );
   }
 
   private async _sendConfirmedMail(appointment: Appointment): Promise<void> {

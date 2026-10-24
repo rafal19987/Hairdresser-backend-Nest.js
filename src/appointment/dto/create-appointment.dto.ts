@@ -20,7 +20,12 @@ export class CreateAppointmentDto {
   @IsDateString()
   scheduledAt: string;
 
-  @ApiProperty({ example: 'jan@example.com', required: false })
+  @ApiProperty({
+    example: 'jan@example.com',
+    required: false,
+    description:
+      'Wymagany, jeśli rezerwacja nie jest powiązana z kontem klienta',
+  })
   @IsOptional()
   @IsEmail()
   clientEmail?: string;

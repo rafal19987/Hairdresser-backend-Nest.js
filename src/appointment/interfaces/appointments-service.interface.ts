@@ -8,6 +8,11 @@ import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { ResponseDto } from '@/common/dto/response.dto';
 
+export interface CreateAppointmentOptions {
+  clientUuid?: string;
+  bookedByClient?: boolean;
+}
+
 export interface AppointmentsServiceInterface {
   findAll(
     paginationParams: PaginationParamsDto,
@@ -19,7 +24,7 @@ export interface AppointmentsServiceInterface {
   find(uuid: string): Promise<ResponseDto>;
   create(
     createAppointmentDto: CreateAppointmentDto,
-    clientUuid?: string,
+    options?: CreateAppointmentOptions,
   ): Promise<ResponseDto>;
   createInternal(
     createInternalAppointmentDto: CreateInternalAppointmentDto,
