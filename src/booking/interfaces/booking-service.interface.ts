@@ -3,6 +3,7 @@ import { AvailableSlotsQueryDto } from '@/booking/dto/available-slots-query.dto'
 
 export interface BookingServiceInterface {
   findAvailableSlots(query: AvailableSlotsQueryDto): Promise<ResponseDto>;
+  findBookableServices(): Promise<ResponseDto>;
   findBookableEmployees(serviceId: string): Promise<ResponseDto>;
 }
 

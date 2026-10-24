@@ -44,6 +44,8 @@ describe('BookingService', () => {
     andWhere: jest.fn().mockReturnThis(),
     distinct: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    addGroupBy: jest.fn().mockReturnThis(),
     addOrderBy: jest.fn().mockReturnThis(),
     getRawMany: jest.fn(),
   });
@@ -149,11 +151,11 @@ describe('BookingService', () => {
   it('selects only bookable assignments of active employees and service', async () => {
     await findSlots();
 
-    expect(offersQueryBuilder.where).toHaveBeenCalledWith(
+    expect(offersQueryBuilder.andWhere).toHaveBeenCalledWith(
       'service.uuid = :serviceId',
       { serviceId: 'service-uuid' },
     );
-    expect(offersQueryBuilder.andWhere).toHaveBeenCalledWith(
+    expect(offersQueryBuilder.where).toHaveBeenCalledWith(
       'service.active = true',
     );
     expect(offersQueryBuilder.andWhere).toHaveBeenCalledWith(
@@ -404,6 +406,51 @@ describe('BookingService', () => {
       await expect(
         service.findBookableEmployees('service-uuid'),
       ).rejects.toBeInstanceOf(ServiceNotFoundException);
+    });
+  });
+
+  describe('findBookableServices', () => {
+    it('returns bookable services with price and duration ranges', async () => {
+      offersQueryBuilder.getRawMany.mockResolvedValue([
+        {
+          uuid: 'service-uuid',
+          name: 'Strzyżenie',
+          description: 'Strzyżenie damskie',
+          minPrice: '80.00',
+          maxPrice: '120.00',
+          minDuration: 30,
+          maxDuration: '45',
+        },
+      ]);
+
+      const result = await service.findBookableServices();
+
+      expect(result.data).toEqual([
+        {
+          uuid: 'service-uuid',
+          name: 'Strzyżenie',
+          description: 'Strzyżenie damskie',
+          minPrice: 80,
+          maxPrice: 120,
+          minDuration: 30,
+          maxDuration: 45,
+        },
+      ]);
+      expect(offersQueryBuilder.groupBy).toHaveBeenCalledWith('service.uuid');
+    });
+
+    it('does not filter by a single service', async () => {
+      offersQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await service.findBookableServices();
+
+      expect(offersQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        'service.uuid = :serviceId',
+        expect.anything(),
+      );
+      expect(offersQueryBuilder.where).toHaveBeenCalledWith(
+        'service.active = true',
+      );
     });
   });
 });

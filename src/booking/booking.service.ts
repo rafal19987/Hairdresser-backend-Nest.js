@@ -13,6 +13,7 @@ import {
   BookableEmployee,
   BookableEmployeesResponse,
 } from '@/booking/interfaces/bookable-employees-response.interface';
+import { BookableService } from '@/booking/interfaces/bookable-services-response.interface';
 import { BookingEmployeeUnavailableException } from '@/booking/exceptions/booking-employee-unavailable.exception';
 import { Appointment } from '@/appointment/entities/appointment.entity';
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
@@ -98,6 +99,35 @@ export class BookingService implements BookingServiceInterface {
     );
   }
 
+  public async findBookableServices(): Promise<ResponseDto> {
+    const services = await this._bookableOffersQuery()
+      .select('service.uuid', 'uuid')
+      .addSelect('service.name', 'name')
+      .addSelect('service.description', 'description')
+      .addSelect('MIN(userService.price)', 'minPrice')
+      .addSelect('MAX(userService.price)', 'maxPrice')
+      .addSelect('MIN(userService.duration)', 'minDuration')
+      .addSelect('MAX(userService.duration)', 'maxDuration')
+      .distinct(false)
+      .groupBy('service.uuid')
+      .addGroupBy('service.name')
+      .addGroupBy('service.description')
+      .orderBy('service.name', 'ASC')
+      .getRawMany<BookableService>();
+
+    return ResponseHelper.success(
+      'Bookable services found',
+      HttpStatus.OK,
+      services.map(service => ({
+        ...service,
+        minPrice: Number(service.minPrice),
+        maxPrice: Number(service.maxPrice),
+        minDuration: Number(service.minDuration),
+        maxDuration: Number(service.maxDuration),
+      })),
+    );
+  }
+
   public async findBookableEmployees(serviceId: string): Promise<ResponseDto> {
     const employees = await this._bookableOffersQuery(serviceId)
       .addSelect('user.firstName', 'firstName')
@@ -125,32 +155,33 @@ export class BookingService implements BookingServiceInterface {
     );
   }
 
-  // Single source of who can be booked, shared by slots and the employee list
+  // Single source of what can be booked, shared by all public booking endpoints
   private _bookableOffersQuery(
-    serviceId: string,
+    serviceId?: string,
   ): SelectQueryBuilder<UsersServices> {
-    return (
-      this.usersServicesRepository
-        .createQueryBuilder('userService')
-        .innerJoin('userService.user', 'user')
-        .innerJoin('userService.service', 'service')
-        // Bookings are stored in the employee's default calendar
-        .innerJoin(
-          Calendar,
-          'calendar',
-          'calendar.owner = user.uuid AND calendar.isDefault = true AND calendar.active = true AND calendar.deleted = false',
-        )
-        .select('userService.uuid', 'userServiceId')
-        .addSelect('user.uuid', 'employeeId')
-        .addSelect('userService.duration', 'duration')
-        .where('service.uuid = :serviceId', { serviceId })
-        .andWhere('service.active = true')
-        .andWhere('service.deleted = false')
-        .andWhere('userService.active = true')
-        .andWhere('user.active = true')
-        .andWhere('user.deleted = false')
-        .distinct(true)
-    );
+    const qb = this.usersServicesRepository
+      .createQueryBuilder('userService')
+      .innerJoin('userService.user', 'user')
+      .innerJoin('userService.service', 'service')
+      // Bookings are stored in the employee's default calendar
+      .innerJoin(
+        Calendar,
+        'calendar',
+        'calendar.owner = user.uuid AND calendar.isDefault = true AND calendar.active = true AND calendar.deleted = false',
+      )
+      .select('userService.uuid', 'userServiceId')
+      .addSelect('user.uuid', 'employeeId')
+      .addSelect('userService.duration', 'duration')
+      .where('service.active = true')
+      .andWhere('service.deleted = false')
+      .andWhere('userService.active = true')
+      .andWhere('user.active = true')
+      .andWhere('user.deleted = false')
+      .distinct(true);
+
+    if (serviceId) qb.andWhere('service.uuid = :serviceId', { serviceId });
+
+    return qb;
   }
 
   private async _findBookableOffers(

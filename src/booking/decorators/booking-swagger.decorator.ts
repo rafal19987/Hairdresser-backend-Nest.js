@@ -34,3 +34,14 @@ export function ApiFindBookableEmployees() {
     ApiResponse({ status: 404, description: 'Service not found' }),
   );
 }
+
+export function ApiFindBookableServices() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Get services that can be booked',
+      description:
+        'Public endpoint. Active services offered by at least one bookable employee, with price and duration ranges across employees.',
+    }),
+    ApiResponse({ status: 200, description: 'Bookable services retrieved' }),
+  );
+}

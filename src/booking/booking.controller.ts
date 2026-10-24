@@ -17,6 +17,7 @@ import { AvailableSlotsQueryDto } from '@/booking/dto/available-slots-query.dto'
 import {
   ApiFindAvailableSlots,
   ApiFindBookableEmployees,
+  ApiFindBookableServices,
 } from '@/booking/decorators/booking-swagger.decorator';
 
 @ApiTags('Booking')
@@ -35,6 +36,13 @@ export class BookingController {
     @Query() query: AvailableSlotsQueryDto,
   ): Promise<ResponseDto> {
     return await this.bookingService.findAvailableSlots(query);
+  }
+
+  @ApiFindBookableServices()
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  @Get('services')
+  async findBookableServices(): Promise<ResponseDto> {
+    return await this.bookingService.findBookableServices();
   }
 
   @ApiFindBookableEmployees()
