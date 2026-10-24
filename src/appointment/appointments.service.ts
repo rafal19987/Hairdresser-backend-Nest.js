@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Appointment } from './entities/appointment.entity';
@@ -40,7 +40,14 @@ import { AppointmentClientEmailRequiredException } from '@/appointment/exception
 import { AppointmentUnavailableException } from '@/appointment/exceptions/appointment-unavailable.exception';
 import { AppointmentDurationMismatchException } from '@/appointment/exceptions/appointment-duration-mismatch.exception';
 import { AppointmentRelationMismatchException } from '@/appointment/exceptions/appointment-relation-mismatch.exception';
-import { CLIENT_BOOKING_MIN_LEAD_TIME_MINUTES } from '@/appointment/constants';
+import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
+import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
+import {
+  SALON_SERVICE,
+  SalonServiceInterface,
+} from '@/salon/interfaces/salon-service.interface';
+import { Salon } from '@/salon/entities/salon.entity';
+import { toLocalDateTime, toMinutes } from '@/salon/helpers/time.helper';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
 import { UserServiceNotFoundException } from '@/users-services/exceptions/users-services-not-found.exception';
 import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-found.exception';
@@ -52,6 +59,9 @@ import {
   AppointmentCancelledMailData,
   AppointmentRescheduledMailData,
 } from '@/mail/interfaces/mail.interface';
+
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 @Injectable()
 export class AppointmentsService implements AppointmentsServiceInterface {
@@ -70,6 +80,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     private readonly usersServicesRepository: Repository<UsersServices>,
     private readonly mailService: MailService,
     private readonly dataSource: DataSource,
+    @Inject(SALON_SERVICE)
+    private readonly salonService: SalonServiceInterface,
   ) {}
 
   public async findAll(
@@ -171,7 +183,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   ): Promise<ResponseDto> {
     const scheduledAt = new Date(createAppointmentDto.scheduledAt);
 
-    this._assertSchedulable(scheduledAt, options.bookedByClient);
+    this._assertNotInPast(scheduledAt);
 
     const userService = await this.usersServicesRepository.findOne({
       where: { uuid: createAppointmentDto.userServiceId },
@@ -207,7 +219,13 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     if (!clientEmail) throw new AppointmentClientEmailRequiredException();
 
     const scheduledEndAt = new Date(
-      scheduledAt.getTime() + userService.duration * 60 * 1000,
+      scheduledAt.getTime() + userService.duration * MINUTE_MS,
+    );
+
+    await this._assertClientBookable(
+      scheduledAt,
+      scheduledEndAt,
+      options.bookedByClient,
     );
 
     const clientPhone =
@@ -271,7 +289,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const scheduledAt = new Date(dto.scheduledAt);
     const scheduledEndAt = new Date(dto.scheduledEndAt);
 
-    this._assertSchedulable(scheduledAt);
+    this._assertNotInPast(scheduledAt);
 
     const duration = this._getDurationInMinutes(scheduledAt, scheduledEndAt);
 
@@ -366,7 +384,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
         ? new Date(dto.scheduledAt)
         : appointment.scheduledAt;
 
-      if (dto.scheduledAt) this._assertSchedulable(scheduledAt);
+      if (dto.scheduledAt) this._assertNotInPast(scheduledAt);
 
       let scheduledEndAt = appointment.scheduledEndAt;
 
@@ -374,7 +392,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
         scheduledEndAt = new Date(dto.scheduledEndAt);
       } else if (dto.duration !== undefined) {
         scheduledEndAt = new Date(
-          scheduledAt.getTime() + dto.duration * 60 * 1000,
+          scheduledAt.getTime() + dto.duration * MINUTE_MS,
         );
       }
 
@@ -386,6 +404,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
       if (dto.duration !== undefined && dto.duration !== duration) {
         throw new AppointmentDurationMismatchException();
+      }
+
+      if (appointment.type === AppointmentType.CLIENT) {
+        await this._assertClientBookable(scheduledAt, scheduledEndAt);
       }
 
       appointment.scheduledAt = scheduledAt;
@@ -500,7 +522,11 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const scheduledAt = new Date(dto.scheduledAt);
     const scheduledEndAt = new Date(dto.scheduledEndAt);
 
-    this._assertSchedulable(scheduledAt);
+    this._assertNotInPast(scheduledAt);
+
+    if (appointment.type === AppointmentType.CLIENT) {
+      await this._assertClientBookable(scheduledAt, scheduledEndAt);
+    }
 
     const previousScheduledAt = appointment.scheduledAt;
     const previousScheduledEndAt = appointment.scheduledEndAt;
@@ -595,15 +621,64 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     }
   }
 
-  private _assertSchedulable(scheduledAt: Date, bookedByClient = false): void {
+  private _assertNotInPast(scheduledAt: Date): void {
+    if (scheduledAt.getTime() <= Date.now()) {
+      throw new AppointmentInPastException();
+    }
+  }
+
+  private async _assertClientBookable(
+    scheduledAt: Date,
+    scheduledEndAt: Date,
+    bookedByClient = false,
+  ): Promise<void> {
+    const salon = await this.salonService.getBookingSettings();
+
+    if (bookedByClient) this._assertWithinBookingWindow(salon, scheduledAt);
+
+    await this._assertWithinOpeningHours(salon, scheduledAt, scheduledEndAt);
+  }
+
+  private _assertWithinBookingWindow(salon: Salon, scheduledAt: Date): void {
     const now = Date.now();
+    const start = scheduledAt.getTime();
 
-    if (scheduledAt.getTime() <= now) throw new AppointmentInPastException();
+    if (start < now + salon.clientMinLeadTimeMinutes * MINUTE_MS) {
+      throw new AppointmentLeadTimeException(salon.clientMinLeadTimeMinutes);
+    }
 
-    const minLeadTimeMs = CLIENT_BOOKING_MIN_LEAD_TIME_MINUTES * 60 * 1000;
+    if (start > now + salon.maxBookingDaysAhead * DAY_MS) {
+      throw new AppointmentBeyondBookingHorizonException(
+        salon.maxBookingDaysAhead,
+      );
+    }
+  }
 
-    if (bookedByClient && scheduledAt.getTime() < now + minLeadTimeMs) {
-      throw new AppointmentLeadTimeException();
+  private async _assertWithinOpeningHours(
+    salon: Salon,
+    scheduledAt: Date,
+    scheduledEndAt: Date,
+  ): Promise<void> {
+    const start = toLocalDateTime(scheduledAt, salon.timeZone);
+    const end = toLocalDateTime(scheduledEndAt, salon.timeZone);
+    const openingRanges = await this.salonService.findOpeningRanges(
+      salon,
+      start.date,
+    );
+
+    const fitsInRange =
+      start.date === end.date &&
+      openingRanges.some(
+        ({ opensAt, closesAt }) =>
+          toMinutes(opensAt) <= start.minutes &&
+          end.minutes <= toMinutes(closesAt),
+      );
+
+    if (!fitsInRange) {
+      throw new AppointmentOutsideOpeningHoursException(
+        start.date,
+        openingRanges,
+      );
     }
   }
 

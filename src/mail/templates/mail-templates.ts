@@ -2,68 +2,85 @@ import {
   AppointmentMailData,
   AppointmentCancelledMailData,
   AppointmentRescheduledMailData,
+  MailBranding,
 } from '@/mail/interfaces/mail.interface';
 import { escape as escapeHtml } from 'validator';
 
-const SALON_TIME_ZONE = 'Europe/Warsaw';
-
-const formatDate = (date: Date): string =>
+const formatDate = (date: Date, timeZone: string): string =>
   new Date(date).toLocaleString('pl-PL', {
     dateStyle: 'full',
     timeStyle: 'short',
-    timeZone: SALON_TIME_ZONE,
+    timeZone,
   });
 
+const footer = ({ salonName, email, phone }: MailBranding): string => {
+  const contact = [phone, email].filter(Boolean).map(escapeHtml).join(' · ');
+
+  return `
+      <hr />
+      <p><strong>${escapeHtml(salonName)}</strong>${contact ? `<br />${contact}` : ''}</p>
+    `;
+};
+
 export const MailTemplates = {
-  invitation: (link: string) => ({
-    subject: 'Zaproszenie do systemu Rêve',
+  invitation: (link: string, branding: MailBranding) => ({
+    subject: `Zaproszenie do systemu ${branding.salonName}`,
     html: `
       <h2>Witaj!</h2>
-      <p>Zostałeś zaproszony do systemu Rêve.</p>
+      <p>Zostałeś zaproszony do systemu ${escapeHtml(branding.salonName)}.</p>
       <p>Kliknij poniższy link aby ustawić hasło i aktywować konto:</p>
       <a href="${escapeHtml(link)}">${escapeHtml(link)}</a>
       <p>Link jest ważny przez 48 godzin.</p>
       <p>Jeśli nie spodziewałeś się tego zaproszenia, zignoruj tę wiadomość.</p>
+      ${footer(branding)}
     `,
   }),
 
-  clientEmailVerification: (link: string) => ({
-    subject: 'Potwierdź swój adres email — Rêve',
+  clientEmailVerification: (link: string, branding: MailBranding) => ({
+    subject: `Potwierdź swój adres email — ${branding.salonName}`,
     html: `
-      <h2>Witaj w Rêve!</h2>
+      <h2>Witaj w ${escapeHtml(branding.salonName)}!</h2>
       <p>Dziękujemy za rejestrację. Kliknij poniższy link aby potwierdzić swój adres email:</p>
       <a href="${escapeHtml(link)}">${escapeHtml(link)}</a>
       <p>Link jest ważny przez 24 godziny.</p>
-      <p>Jeśli nie zakładałeś konta w systemie Rêve, zignoruj tę wiadomość.</p>
+      <p>Jeśli nie zakładałeś konta w systemie ${escapeHtml(branding.salonName)}, zignoruj tę wiadomość.</p>
+      ${footer(branding)}
     `,
   }),
 
-  appointmentCreatedToClient: (data: AppointmentMailData) => ({
-    subject: 'Potwierdzenie rezerwacji — Rêve',
+  appointmentCreatedToClient: (
+    data: AppointmentMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Potwierdzenie rezerwacji — ${branding.salonName}`,
     html: `
       <h2>Dziękujemy za rezerwację!</h2>
       <p>Twoja wizyta została przyjęta i oczekuje na potwierdzenie przez salon.</p>
       <table>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
         <tr><td><strong>Pracownik:</strong></td><td>${escapeHtml(data.employeeName)}</td></tr>
-        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
-        <tr><td><strong>Czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
+        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Cena:</strong></td><td>${data.price} zł</td></tr>
         ${data.note ? `<tr><td><strong>Notatka:</strong></td><td>${escapeHtml(data.note)}</td></tr>` : ''}
       </table>
       <p>O potwierdzeniu wizyty poinformujemy Cię osobnym mailem.</p>
+      ${footer(branding)}
     `,
   }),
 
-  appointmentCreatedToEmployee: (data: AppointmentMailData) => ({
-    subject: 'Nowa rezerwacja — Rêve',
+  appointmentCreatedToEmployee: (
+    data: AppointmentMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Nowa rezerwacja — ${branding.salonName}`,
     html: `
       <h2>Masz nową rezerwację!</h2>
       <table>
         <tr><td><strong>Klient:</strong></td><td>${escapeHtml(data.clientName)}</td></tr>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
-        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
-        <tr><td><strong>Czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
+        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Cena:</strong></td><td>${data.price} zł</td></tr>
         ${data.note ? `<tr><td><strong>Notatka klienta:</strong></td><td>${escapeHtml(data.note)}</td></tr>` : ''}
       </table>
@@ -71,76 +88,94 @@ export const MailTemplates = {
     `,
   }),
 
-  appointmentConfirmedToClient: (data: AppointmentMailData) => ({
-    subject: 'Wizyta potwierdzona — Rêve',
+  appointmentConfirmedToClient: (
+    data: AppointmentMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Wizyta potwierdzona — ${branding.salonName}`,
     html: `
       <h2>Twoja wizyta została potwierdzona!</h2>
       <table>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
         <tr><td><strong>Pracownik:</strong></td><td>${escapeHtml(data.employeeName)}</td></tr>
-        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
-        <tr><td><strong>Czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
+        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Cena:</strong></td><td>${data.price} zł</td></tr>
       </table>
       <p>Do zobaczenia!</p>
+      ${footer(branding)}
     `,
   }),
 
-  appointmentCancelledToClient: (data: AppointmentCancelledMailData) => ({
-    subject: 'Wizyta anulowana — Rêve',
+  appointmentCancelledToClient: (
+    data: AppointmentCancelledMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Wizyta anulowana — ${branding.salonName}`,
     html: `
       <h2>Wizyta została anulowana</h2>
       <table>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
         <tr><td><strong>Pracownik:</strong></td><td>${escapeHtml(data.employeeName)}</td></tr>
-        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
+        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Anulowano przez:</strong></td><td>${data.cancelledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
         ${data.cancellationReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.cancellationReason)}</td></tr>` : ''}
       </table>
       <p>Jeśli chcesz umówić nową wizytę, zapraszamy na naszą stronę.</p>
+      ${footer(branding)}
     `,
   }),
 
-  appointmentCancelledToEmployee: (data: AppointmentCancelledMailData) => ({
-    subject: 'Wizyta anulowana — Rêve',
+  appointmentCancelledToEmployee: (
+    data: AppointmentCancelledMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Wizyta anulowana — ${branding.salonName}`,
     html: `
       <h2>Wizyta została anulowana</h2>
       <table>
         <tr><td><strong>Klient:</strong></td><td>${escapeHtml(data.clientName)}</td></tr>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
-        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
+        <tr><td><strong>Data:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Anulowano przez:</strong></td><td>${data.cancelledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
         ${data.cancellationReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.cancellationReason)}</td></tr>` : ''}
       </table>
     `,
   }),
 
-  appointmentRescheduledToClient: (data: AppointmentRescheduledMailData) => ({
-    subject: 'Wizyta przełożona — Rêve',
+  appointmentRescheduledToClient: (
+    data: AppointmentRescheduledMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Wizyta przełożona — ${branding.salonName}`,
     html: `
       <h2>Twoja wizyta została przełożona</h2>
       <table>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
         <tr><td><strong>Pracownik:</strong></td><td>${escapeHtml(data.employeeName)}</td></tr>
-        <tr><td><strong>Poprzedni termin:</strong></td><td>${formatDate(data.previousScheduledAt)}</td></tr>
-        <tr><td><strong>Nowy termin:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
-        <tr><td><strong>Nowy czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
+        <tr><td><strong>Poprzedni termin:</strong></td><td>${formatDate(data.previousScheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Nowy termin:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Nowy czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Przełożono przez:</strong></td><td>${data.rescheduledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
         ${data.rescheduleReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.rescheduleReason)}</td></tr>` : ''}
       </table>
+      ${footer(branding)}
     `,
   }),
 
-  appointmentRescheduledToEmployee: (data: AppointmentRescheduledMailData) => ({
-    subject: 'Wizyta przełożona — Rêve',
+  appointmentRescheduledToEmployee: (
+    data: AppointmentRescheduledMailData,
+    branding: MailBranding,
+  ) => ({
+    subject: `Wizyta przełożona — ${branding.salonName}`,
     html: `
       <h2>Wizyta została przełożona</h2>
       <table>
         <tr><td><strong>Klient:</strong></td><td>${escapeHtml(data.clientName)}</td></tr>
         <tr><td><strong>Usługa:</strong></td><td>${escapeHtml(data.serviceName)}</td></tr>
-        <tr><td><strong>Poprzedni termin:</strong></td><td>${formatDate(data.previousScheduledAt)}</td></tr>
-        <tr><td><strong>Nowy termin:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
-        <tr><td><strong>Nowy czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
+        <tr><td><strong>Poprzedni termin:</strong></td><td>${formatDate(data.previousScheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Nowy termin:</strong></td><td>${formatDate(data.scheduledAt, branding.timeZone)}</td></tr>
+        <tr><td><strong>Nowy czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt, branding.timeZone)}</td></tr>
         <tr><td><strong>Przełożono przez:</strong></td><td>${data.rescheduledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
         ${data.rescheduleReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.rescheduleReason)}</td></tr>` : ''}
       </table>

@@ -2,6 +2,14 @@ export interface MailOptions {
   to: string;
   subject: string;
   html: string;
+  fromName?: string;
+}
+
+export interface MailBranding {
+  salonName: string;
+  timeZone: string;
+  email: string | null;
+  phone: string | null;
 }
 
 export interface MailServiceInterface {

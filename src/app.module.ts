@@ -16,6 +16,7 @@ import { MailModule } from './mail/mail.module';
 import { UsersServicesModule } from './users-services/users-services.module';
 import { ClientsModule } from './clients/clients.module';
 import { AuthClientModule } from './auth-client/auth-client.module';
+import { SalonModule } from './salon/salon.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AuthClientModule } from './auth-client/auth-client.module';
     UsersServicesModule,
     ClientsModule,
     AuthClientModule,
+    SalonModule,
   ],
   controllers: [AppController],
   providers: [
