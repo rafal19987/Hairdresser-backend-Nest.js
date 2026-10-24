@@ -12,6 +12,7 @@ export default new DataSource({
   username: process.env.MYSQL_USERNAME,
   password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DATABASE,
+  timezone: 'Z',
   entities: ['dist/**/*.entity.js'],
   migrations: ['dist/migrations/*.js'],
   migrationsTableName: 'migration_table',

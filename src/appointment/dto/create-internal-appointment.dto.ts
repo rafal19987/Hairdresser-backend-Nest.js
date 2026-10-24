@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsAfter } from '@/appointment/validators/date-range.validator';
+import { HasTimeZone } from '@/appointment/validators/has-time-zone.validator';
 
 export class CreateInternalAppointmentDto {
   @ApiProperty({ example: 'uuid-kalendarza' })
@@ -51,11 +52,13 @@ export class CreateInternalAppointmentDto {
   @ApiProperty({ example: '2026-03-01T10:00:00.000Z' })
   @IsNotEmpty()
   @IsDateString()
+  @HasTimeZone()
   scheduledAt: string;
 
   @ApiProperty({ example: '2026-03-01T11:00:00.000Z' })
   @IsNotEmpty()
   @IsDateString()
+  @HasTimeZone()
   @IsAfter('scheduledAt', {
     message: 'Data zakończenia musi być późniejsza niż data rozpoczęcia',
   })

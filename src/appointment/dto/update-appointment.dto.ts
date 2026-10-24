@@ -1,6 +1,6 @@
 import {
   IsDateString,
-  IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsPositive,
@@ -10,6 +10,13 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { IsAfter } from '@/appointment/validators/date-range.validator';
+import { HasTimeZone } from '@/appointment/validators/has-time-zone.validator';
+
+export const UPDATABLE_APPOINTMENT_STATUSES = [
+  AppointmentStatus.PENDING,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.COMPLETED,
+];
 
 export class UpdateAppointmentDto {
   @ApiProperty({ example: 'Nowa nazwa', required: false })
@@ -18,9 +25,12 @@ export class UpdateAppointmentDto {
   @Length(1, 255)
   name?: string;
 
-  @ApiProperty({ enum: AppointmentStatus, required: false })
+  @ApiProperty({ enum: UPDATABLE_APPOINTMENT_STATUSES, required: false })
   @IsOptional()
-  @IsEnum(AppointmentStatus)
+  @IsIn(UPDATABLE_APPOINTMENT_STATUSES, {
+    message:
+      'Status można zmienić na: pending, confirmed, completed. Do anulowania i przełożenia wizyty służą osobne endpointy',
+  })
   status?: AppointmentStatus;
 
   @ApiProperty({ example: 60, required: false })
@@ -48,11 +58,13 @@ export class UpdateAppointmentDto {
   @ApiProperty({ example: '2026-03-01T10:00:00.000Z', required: false })
   @IsOptional()
   @IsDateString()
+  @HasTimeZone()
   scheduledAt?: string;
 
   @ApiProperty({ example: '2026-03-01T11:00:00.000Z', required: false })
   @IsOptional()
   @IsDateString()
+  @HasTimeZone()
   @IsAfter('scheduledAt', {
     message: 'Data zakończenia musi być późniejsza niż data rozpoczęcia',
   })

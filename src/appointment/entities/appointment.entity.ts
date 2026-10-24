@@ -17,6 +17,7 @@ import { UsersServices } from '@/users-services/entities/users-services.entity';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { CancelledBy } from '@/appointment/enums/appointment-cancelled-by.enum';
 import { RescheduledBy } from '@/appointment/enums/appointment-rescheduled-by.enum';
+import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 
 @Entity('appointment')
 @Index('idx_appointment_scheduled_at', ['scheduledAt'])
@@ -60,6 +61,14 @@ export class Appointment {
     nullable: false,
   })
   status: AppointmentStatus;
+
+  @Column({
+    type: 'enum',
+    enum: AppointmentType,
+    default: AppointmentType.CLIENT,
+    nullable: false,
+  })
+  type: AppointmentType;
 
   @Column({
     type: 'decimal',
@@ -119,6 +128,9 @@ export class Appointment {
 
   @Column({ type: 'timestamp', nullable: true })
   rescheduledAt?: Date;
+
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  rescheduleReason?: string;
 
   @Column({ type: 'timestamp', nullable: true })
   previousScheduledAt?: Date;

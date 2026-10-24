@@ -31,7 +31,8 @@ async function bootstrap() {
     database: process.env.MYSQL_DATABASE,
     username: process.env.MYSQL_USERNAME,
     password: process.env.MYSQL_PASSWORD,
-    entities: [__dirname + '/../**/*.entity.js'],
+    timezone: 'Z',
+    entities: [__dirname + '/../**/*.entity.{js,ts}'],
     synchronize: false,
   });
 

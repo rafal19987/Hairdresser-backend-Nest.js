@@ -10,6 +10,7 @@ import {
   Post,
   Put,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -83,8 +84,11 @@ export class AppointmentsController {
   @Post()
   async create(
     @Body() createAppointmentDto: CreateAppointmentDto,
+    @Request() req,
   ): Promise<ResponseDto> {
-    return await this.appointmentsService.create(createAppointmentDto);
+    return await this.appointmentsService.create(createAppointmentDto, {
+      createdByUuid: req.userId,
+    });
   }
 
   @ApiCreateInternalAppointment()
@@ -92,9 +96,11 @@ export class AppointmentsController {
   @Post('internal')
   async createInternal(
     @Body() createInternalAppointmentDto: CreateInternalAppointmentDto,
+    @Request() req,
   ): Promise<ResponseDto> {
     return await this.appointmentsService.createInternal(
       createInternalAppointmentDto,
+      req.userId,
     );
   }
 
