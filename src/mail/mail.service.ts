@@ -1,21 +1,42 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import {
   AppointmentCancelledMailData,
   AppointmentMailData,
   AppointmentRescheduledMailData,
+  MailBranding,
+  MailOptions,
   MailServiceInterface,
 } from '@/mail/interfaces/mail.interface';
-import { MailOptions } from 'nodemailer/lib/smtp-pool';
 import { MailTemplates } from '@/mail/templates/mail-templates';
 import { MailtrapClient } from 'mailtrap';
+import { Salon } from '@/salon/entities/salon.entity';
+import { findDefaultSalon } from '@/salon/helpers/default-salon.helper';
+
+const DEFAULT_BRANDING: MailBranding = {
+  salonName: 'Rêve',
+  timeZone: 'Europe/Warsaw',
+  email: null,
+  phone: null,
+};
+
+interface MailTemplate {
+  subject: string;
+  html: string;
+}
 
 @Injectable()
 export class MailService implements MailServiceInterface {
   private readonly logger = new Logger(MailService.name);
   private client: MailtrapClient;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(Salon)
+    private readonly salonRepository: Repository<Salon>,
+  ) {
     const isSandbox =
       this.configService.get<string>('MAILTRAP_USE_SANDBOX') === 'true';
     const inboxId = isSandbox
@@ -33,7 +54,7 @@ export class MailService implements MailServiceInterface {
     try {
       await this.client.send({
         from: {
-          name: 'Rêve',
+          name: options.fromName ?? DEFAULT_BRANDING.salonName,
           email: this.configService.get<string>('MAIL_FROM') as string,
         },
         to: [{ email: options.to as string }],
@@ -47,15 +68,18 @@ export class MailService implements MailServiceInterface {
     }
   }
 
+  async sendBookingManageLink(email: string, manageUrl: string): Promise<void> {
+    await this._sendTemplate(email, branding =>
+      MailTemplates.bookingManageLink(manageUrl, branding),
+    );
+  }
+
   async sendInvitation(email: string, invitationToken: string): Promise<void> {
     const appUrl = this.configService.get<string>('APP_URL');
     const link = `${appUrl}/set-password/${invitationToken}`;
-    const template = MailTemplates.invitation(link);
-
-    await this.send({
-      to: email,
-      ...template,
-    });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.invitation(link, branding),
+    );
   }
 
   async sendClientEmailVerification(
@@ -64,67 +88,99 @@ export class MailService implements MailServiceInterface {
   ): Promise<void> {
     const appUrl = this.configService.get<string>('APP_URL');
     const link = `${appUrl}/verify-email/${verificationToken}`;
-    const template = MailTemplates.clientEmailVerification(link);
-
-    await this.send({
-      to: email,
-      ...template,
-    });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.clientEmailVerification(link, branding),
+    );
   }
 
   async sendAppointmentCreatedToClient(
     email: string,
     data: AppointmentMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentCreatedToClient(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentCreatedToClient(data, branding),
+    );
   }
 
   async sendAppointmentCreatedToEmployee(
     email: string,
     data: AppointmentMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentCreatedToEmployee(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentCreatedToEmployee(data, branding),
+    );
   }
 
   async sendAppointmentConfirmedToClient(
     email: string,
     data: AppointmentMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentConfirmedToClient(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentConfirmedToClient(data, branding),
+    );
   }
 
   async sendAppointmentCancelledToClient(
     email: string,
     data: AppointmentCancelledMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentCancelledToClient(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentCancelledToClient(data, branding),
+    );
   }
 
   async sendAppointmentCancelledToEmployee(
     email: string,
     data: AppointmentCancelledMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentCancelledToEmployee(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentCancelledToEmployee(data, branding),
+    );
   }
 
   async sendAppointmentRescheduledToClient(
     email: string,
     data: AppointmentRescheduledMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentRescheduledToClient(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentRescheduledToClient(data, branding),
+    );
   }
 
   async sendAppointmentRescheduledToEmployee(
     email: string,
     data: AppointmentRescheduledMailData,
   ): Promise<void> {
-    const template = MailTemplates.appointmentRescheduledToEmployee(data);
-    await this.send({ to: email, ...template });
+    await this._sendTemplate(email, branding =>
+      MailTemplates.appointmentRescheduledToEmployee(data, branding),
+    );
+  }
+
+  private async _sendTemplate(
+    to: string,
+    build: (branding: MailBranding) => MailTemplate,
+  ): Promise<void> {
+    const branding = await this._getBranding();
+
+    await this.send({ to, fromName: branding.salonName, ...build(branding) });
+  }
+
+  private async _getBranding(): Promise<MailBranding> {
+    try {
+      const salon = await findDefaultSalon(this.salonRepository);
+
+      if (salon) {
+        return {
+          salonName: salon.name,
+          timeZone: salon.timeZone,
+          email: salon.email,
+          phone: salon.phone,
+        };
+      }
+    } catch (error) {
+      this.logger.warn('Could not load salon settings for mail', error);
+    }
+
+    return DEFAULT_BRANDING;
   }
 }

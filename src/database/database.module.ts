@@ -6,9 +6,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
   imports: [
     TypeOrmModule.forRootAsync({
       useFactory: (configService: ConfigService) => {
-        const nodeEnv = configService.get('NODE_ENV');
-        const isProd = nodeEnv === 'production';
-
         return {
           type: 'mysql',
           host: configService.get('MYSQL_HOST'),
@@ -16,11 +13,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
           database: configService.get('MYSQL_DATABASE'),
           username: configService.get('MYSQL_USERNAME'),
           password: configService.get('MYSQL_PASSWORD'),
+          // Store dates in UTC regardless of the host time zone (local machine vs Docker)
+          timezone: 'Z',
           autoLoadEntities: true,
-          synchronize: configService.get('MYSQL_SYNCHRONIZE'),
+          synchronize: configService.get('MYSQL_SYNCHRONIZE') === 'true',
           retryAttempts: 5,
           retryDelay: 3000,
-          migrationsRun: isProd,
+          migrationsRun: true,
           migrationsTableName: 'migration_table',
           migrations: ['dist/migrations/*.js'],
         };

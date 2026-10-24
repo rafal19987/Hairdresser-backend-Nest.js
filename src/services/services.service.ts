@@ -13,12 +13,17 @@ import { CreateServiceDto } from '@/services/dto/create-service.dto';
 import { ServiceAlreadyExistsException } from '@/services/exceptions/service-already-exists.exception';
 import { EditServiceDto } from '@/services/dto/edit-service.dto';
 import { ServiceIsNotDeletedException } from '@/services/exceptions/service-is-not-deleted.exception';
+import { ServiceHasUpcomingAppointmentsException } from '@/services/exceptions/service-has-upcoming-appointments.exception';
+import { Appointment } from '@/appointment/entities/appointment.entity';
+import { countUpcomingClientAppointments } from '@/appointment/helpers/upcoming-client-appointments.helper';
 
 @Injectable()
 export class ServicesService implements ServicesServiceInterface {
   constructor(
     @InjectRepository(Service)
     private readonly serviceRepository: Repository<Service>,
+    @InjectRepository(Appointment)
+    private readonly appointmentRepository: Repository<Appointment>,
   ) {}
 
   public async find(uuid: string): Promise<ResponseDto> {
@@ -104,6 +109,10 @@ export class ServicesService implements ServicesServiceInterface {
 
     if (!service) throw new ServiceNotFoundException();
 
+    if (editServiceDto.active === false && service.active) {
+      await this._assertNoUpcomingClientAppointments(uuid);
+    }
+
     service.name = editServiceDto.name;
     service.description = editServiceDto.description;
     service.active = editServiceDto.active;
@@ -121,6 +130,9 @@ export class ServicesService implements ServicesServiceInterface {
 
     if (!service) throw new ServiceNotFoundException();
 
+    // Deleting the service cascades to employee assignments used by appointments
+    await this._assertNoUpcomingClientAppointments(uuid);
+
     await this.serviceRepository.remove(service);
 
     return ResponseHelper.deleted('Service successfully deleted');
@@ -132,6 +144,8 @@ export class ServicesService implements ServicesServiceInterface {
     });
 
     if (!service) throw new ServiceNotFoundException();
+
+    await this._assertNoUpcomingClientAppointments(uuid);
 
     service.deleted = true;
     service.active = false;
@@ -160,5 +174,16 @@ export class ServicesService implements ServicesServiceInterface {
     await this.serviceRepository.recover({ uuid });
 
     return ResponseHelper.restored('Service successfully restored');
+  }
+
+  private async _assertNoUpcomingClientAppointments(
+    uuid: string,
+  ): Promise<void> {
+    const count = await countUpcomingClientAppointments(
+      this.appointmentRepository,
+      { userService: { service: { uuid } } },
+    );
+
+    if (count > 0) throw new ServiceHasUpcomingAppointmentsException(count);
   }
 }

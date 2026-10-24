@@ -1,4 +1,4 @@
-import { Appointment } from '../entities/appointment.entity';
+import { AppointmentResponse } from './appointment-response.interface';
 import { CreateAppointmentDto } from '../dto/create-appointment.dto';
 import { CreateInternalAppointmentDto } from '../dto/create-internal-appointment.dto';
 import { UpdateAppointmentDto } from '../dto/update-appointment.dto';
@@ -8,21 +8,32 @@ import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { ResponseDto } from '@/common/dto/response.dto';
 
+export interface CreateAppointmentOptions {
+  clientUuid?: string;
+  bookedByClient?: boolean;
+  createdByUuid?: string;
+}
+
+export interface RescheduleAppointmentOptions {
+  bookedByClient?: boolean;
+}
+
 export interface AppointmentsServiceInterface {
   findAll(
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>>;
+  ): Promise<PaginatedResultDto<AppointmentResponse>>;
   findByCalendar(
     calendarUuid: string,
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>>;
+  ): Promise<PaginatedResultDto<AppointmentResponse>>;
   find(uuid: string): Promise<ResponseDto>;
   create(
     createAppointmentDto: CreateAppointmentDto,
-    clientUuid?: string,
+    options?: CreateAppointmentOptions,
   ): Promise<ResponseDto>;
   createInternal(
     createInternalAppointmentDto: CreateInternalAppointmentDto,
+    createdByUuid?: string,
   ): Promise<ResponseDto>;
   update(
     uuid: string,
@@ -35,6 +46,7 @@ export interface AppointmentsServiceInterface {
   reschedule(
     uuid: string,
     rescheduleAppointmentDto: RescheduleAppointmentDto,
+    options?: RescheduleAppointmentOptions,
   ): Promise<ResponseDto>;
   remove(uuid: string): Promise<ResponseDto>;
 }

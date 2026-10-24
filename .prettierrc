@@ -7,5 +7,5 @@
   "printWidth": 80,
   "bracketSameLine": false,
   "bracketSpacing": true,
-  "endOfLine": "crlf"
+  "endOfLine": "lf"
 }

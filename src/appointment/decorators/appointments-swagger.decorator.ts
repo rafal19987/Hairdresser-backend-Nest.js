@@ -57,7 +57,15 @@ export function ApiCreateAppointment() {
     ApiOperation({ summary: 'Utwórz rezerwację (klient)' }),
     ApiBody({ type: CreateAppointmentDto }),
     ApiResponse({ status: 201, description: 'Wizyta została utworzona' }),
-    ApiResponse({ status: 400, description: 'Nieprawidłowe dane' }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Nieprawidłowe dane, termin w przeszłości lub poza godzinami otwarcia salonu, brak e-maila klienta lub usługa, pracownik albo kalendarz niedostępny',
+    }),
+    ApiResponse({
+      status: 404,
+      description: 'Usługa pracownika, kalendarz lub klient nie istnieje',
+    }),
     ApiResponse({ status: 409, description: 'Termin jest zajęty' }),
   );
 }
@@ -67,6 +75,15 @@ export function ApiCreateInternalAppointment() {
     ApiOperation({ summary: 'Utwórz spotkanie wewnętrzne (pracownik/admin)' }),
     ApiBody({ type: CreateInternalAppointmentDto }),
     ApiResponse({ status: 201, description: 'Spotkanie zostało utworzone' }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Termin w przeszłości, niezgodny czas trwania lub kalendarz/usługa nie należy do pracownika',
+    }),
+    ApiResponse({
+      status: 404,
+      description: 'Pracownik, kalendarz, klient lub usługa nie istnieje',
+    }),
     ApiResponse({ status: 409, description: 'Termin jest zajęty' }),
   );
 }
@@ -77,7 +94,17 @@ export function ApiUpdateAppointment() {
     UuidParam('Appointment UUID'),
     ApiBody({ type: UpdateAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta zaktualizowana' }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Nieprawidłowy status, zakres dat lub termin wizyty klienta poza godzinami otwarcia salonu',
+    }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
+    ApiResponse({
+      status: 409,
+      description:
+        'Termin jest zajęty, wizyta jest anulowana lub zakończonej wizyty nie można przełożyć',
+    }),
   );
 }
 
@@ -88,7 +115,10 @@ export function ApiCancelAppointment() {
     ApiBody({ type: CancelAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta anulowana' }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
-    ApiResponse({ status: 409, description: 'Wizyta jest już anulowana' }),
+    ApiResponse({
+      status: 409,
+      description: 'Wizyta jest już anulowana lub zakończona',
+    }),
   );
 }
 
@@ -98,8 +128,17 @@ export function ApiRescheduleAppointment() {
     UuidParam('Appointment UUID'),
     ApiBody({ type: RescheduleAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta przełożona' }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Nieprawidłowy zakres dat lub termin wizyty klienta poza godzinami otwarcia salonu',
+    }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
-    ApiResponse({ status: 409, description: 'Termin jest zajęty' }),
+    ApiResponse({
+      status: 409,
+      description:
+        'Termin jest zajęty lub wizyta jest anulowana albo zakończona',
+    }),
   );
 }
 

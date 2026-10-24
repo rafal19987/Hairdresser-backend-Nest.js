@@ -19,6 +19,8 @@ export interface ClientsServiceInterface {
   remove(uuid: string): Promise<ResponseDto>;
 
   verifyEmail(token: string): Promise<ResponseDto>;
+
+  resendVerification(email: string): Promise<ResponseDto>;
 }
 
 export const CLIENTS_SERVICE = 'CLIENTS_SERVICE';

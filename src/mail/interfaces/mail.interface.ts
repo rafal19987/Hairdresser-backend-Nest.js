@@ -2,10 +2,19 @@ export interface MailOptions {
   to: string;
   subject: string;
   html: string;
+  fromName?: string;
+}
+
+export interface MailBranding {
+  salonName: string;
+  timeZone: string;
+  email: string | null;
+  phone: string | null;
 }
 
 export interface MailServiceInterface {
   send(options: MailOptions): Promise<void>;
+  sendBookingManageLink(email: string, manageUrl: string): Promise<void>;
   sendInvitation(email: string, invitationToken: string): Promise<void>;
   sendClientEmailVerification(
     email: string,
@@ -49,6 +58,10 @@ export interface AppointmentMailData {
   scheduledEndAt: Date;
   price: number;
   note?: string;
+  // Link to the client page with their appointments
+  manageUrl?: string;
+  // Present only when the appointment belongs to a client account
+  accountUrl?: string;
 }
 
 export interface AppointmentCancelledMailData extends AppointmentMailData {
@@ -60,6 +73,7 @@ export interface AppointmentRescheduledMailData extends AppointmentMailData {
   previousScheduledAt: Date;
   previousScheduledEndAt: Date;
   rescheduledBy: string;
+  rescheduleReason?: string;
 }
 
 export const MAIL_SERVICE = 'MAIL_SERVICE';

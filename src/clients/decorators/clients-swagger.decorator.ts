@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { CreateClientDto } from '@/clients/dto/create-client.dto';
 import { UpdateClientDto } from '@/clients/dto/update-client.dto';
+import { ResendVerificationDto } from '@/clients/dto/resend-verification.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 
 const UuidParam = () =>
@@ -71,7 +72,20 @@ export function ApiVerifyClientEmail() {
       type: String,
     }),
     ApiResponse({ status: 200, description: 'Email verified successfully' }),
+    ApiResponse({ status: 400, description: 'Verification token expired' }),
     ApiResponse({ status: 404, description: 'Invalid verification token' }),
+  );
+}
+
+export function ApiResendClientVerification() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Resend client verification email',
+      description:
+        'Generates a new verification token and sends it if the account is not verified yet. Response is the same whether or not the account exists.',
+    }),
+    ApiBody({ type: ResendVerificationDto }),
+    ApiResponse({ status: 200, description: 'Request accepted' }),
   );
 }
 

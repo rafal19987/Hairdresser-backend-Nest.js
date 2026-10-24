@@ -16,6 +16,9 @@ import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { CreateUsersServicesDto } from '@/users-services/dto/create-users-services.dto';
 import { UsersServicesUserNotFoundException } from '@/users-services/exceptions/users-services-user-not-found.exception';
 import { UsersServicesServiceNotFoundException } from '@/users-services/exceptions/users-services-service-not-found.exception';
+import { UsersServicesHasUpcomingAppointmentsException } from '@/users-services/exceptions/users-services-has-upcoming-appointments.exception';
+import { Appointment } from '@/appointment/entities/appointment.entity';
+import { countUpcomingClientAppointments } from '@/appointment/helpers/upcoming-client-appointments.helper';
 
 @Injectable()
 export class UsersServicesService implements UsersServicesServiceInterface {
@@ -26,6 +29,8 @@ export class UsersServicesService implements UsersServicesServiceInterface {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Service)
     private readonly serviceRepository: Repository<Service>,
+    @InjectRepository(Appointment)
+    private readonly appointmentRepository: Repository<Appointment>,
   ) {}
 
   public async findAll(
@@ -167,6 +172,10 @@ export class UsersServicesService implements UsersServicesServiceInterface {
       userService.duration = updateUsersServiceDto.duration;
     }
 
+    if (updateUsersServiceDto.active === false && userService.active) {
+      await this._assertNoUpcomingClientAppointments(uuid);
+    }
+
     if (updateUsersServiceDto.active !== undefined) {
       userService.active = updateUsersServiceDto.active;
     }
@@ -184,8 +193,23 @@ export class UsersServicesService implements UsersServicesServiceInterface {
 
     if (!userService) throw new UserServiceNotFoundException();
 
+    await this._assertNoUpcomingClientAppointments(uuid);
+
     await this.userServiceRepository.remove(userService);
 
     return ResponseHelper.deleted('User service successfully deleted');
+  }
+
+  private async _assertNoUpcomingClientAppointments(
+    uuid: string,
+  ): Promise<void> {
+    const count = await countUpcomingClientAppointments(
+      this.appointmentRepository,
+      { userService: { uuid } },
+    );
+
+    if (count > 0) {
+      throw new UsersServicesHasUpcomingAppointmentsException(count);
+    }
   }
 }

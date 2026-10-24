@@ -16,6 +16,10 @@ import { MailModule } from './mail/mail.module';
 import { UsersServicesModule } from './users-services/users-services.module';
 import { ClientsModule } from './clients/clients.module';
 import { AuthClientModule } from './auth-client/auth-client.module';
+import { SalonModule } from './salon/salon.module';
+import { BookingModule } from './booking/booking.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -42,6 +46,10 @@ import { AuthClientModule } from './auth-client/auth-client.module';
     UsersServicesModule,
     ClientsModule,
     AuthClientModule,
+    SalonModule,
+    BookingModule,
+    ScheduleModule.forRoot(),
+    AuditLogModule,
   ],
   controllers: [AppController],
   providers: [

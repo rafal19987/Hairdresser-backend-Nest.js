@@ -1,6 +1,7 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Appointment } from './entities/appointment.entity';
 import { Calendar } from '@/calendar/entities/calendar.entity';
 import { User } from '@/users/entities/user.entity';
@@ -16,19 +17,62 @@ import { ResponseHelper } from '@/common/helpers/response.helper';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { createPaginatedResponse } from '@/common/helpers/pagination.helper';
-import { AppointmentsServiceInterface } from '@/appointment/interfaces/appointments-service.interface';
+import {
+  AppointmentsServiceInterface,
+  CreateAppointmentOptions,
+  RescheduleAppointmentOptions,
+} from '@/appointment/interfaces/appointments-service.interface';
 import { AppointmentNotFoundException } from '@/appointment/exceptions/appointment-not-found.exception';
 import { AppointmentAlreadyCancelledException } from '@/appointment/exceptions/appointment-already-cancelled.exception';
 import { AppointmentConflictException } from '@/appointment/exceptions/appointment-conflict.exception';
+import { AppointmentNotModifiableException } from '@/appointment/exceptions/appointment-not-modifiable.exception';
+import { AppointmentInvalidDateRangeException } from '@/appointment/exceptions/appointment-invalid-date-range.exception';
+import {
+  AppointmentOverlapResponse,
+  AppointmentResponse,
+} from '@/appointment/interfaces/appointment-response.interface';
+import {
+  toAppointmentOverlapResponse,
+  toAppointmentResponse,
+} from '@/appointment/mappers/appointment-response.mapper';
+import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
+import { AppointmentInPastException } from '@/appointment/exceptions/appointment-in-past.exception';
+import { AppointmentLeadTimeException } from '@/appointment/exceptions/appointment-lead-time.exception';
+import { AppointmentClientEmailRequiredException } from '@/appointment/exceptions/appointment-client-email-required.exception';
+import { AppointmentUnavailableException } from '@/appointment/exceptions/appointment-unavailable.exception';
+import { AppointmentDurationMismatchException } from '@/appointment/exceptions/appointment-duration-mismatch.exception';
+import { AppointmentRelationMismatchException } from '@/appointment/exceptions/appointment-relation-mismatch.exception';
+import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
+import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
+import {
+  SALON_SERVICE,
+  SalonServiceInterface,
+} from '@/salon/interfaces/salon-service.interface';
+import { Salon } from '@/salon/entities/salon.entity';
+import { toLocalDateTime, toMinutes } from '@/salon/helpers/time.helper';
+import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
+import { UserServiceNotFoundException } from '@/users-services/exceptions/users-services-not-found.exception';
 import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-found.exception';
 import { UserNotFoundException } from '@/users/exceptions/user-not-found.exception';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { MailService } from '@/mail/mail.service';
+import { BookingAccessService } from '@/booking-access/booking-access.service';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { AuditLogEntry } from '@/audit-log/interfaces/audit-log-entry.interface';
 import {
   AppointmentMailData,
   AppointmentCancelledMailData,
   AppointmentRescheduledMailData,
 } from '@/mail/interfaces/mail.interface';
+
+const MINUTE_MS = 60 * 1000;
+
+// Status changes made through update get their own audit action
+const STATUS_ACTIONS: Partial<Record<AppointmentStatus, string>> = {
+  [AppointmentStatus.CONFIRMED]: 'confirmed',
+  [AppointmentStatus.COMPLETED]: 'completed',
+};
+const DAY_MS = 24 * 60 * MINUTE_MS;
 
 @Injectable()
 export class AppointmentsService implements AppointmentsServiceInterface {
@@ -46,17 +90,25 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     @InjectRepository(UsersServices)
     private readonly usersServicesRepository: Repository<UsersServices>,
     private readonly mailService: MailService,
+    private readonly dataSource: DataSource,
+    @Inject(SALON_SERVICE)
+    private readonly salonService: SalonServiceInterface,
+    private readonly bookingAccessService: BookingAccessService,
+    private readonly configService: ConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   public async findAll(
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>> {
+  ): Promise<PaginatedResultDto<AppointmentResponse>> {
     const { page, limit, query } = paginationParams;
     const skip = (page - 1) * limit;
 
     const qb = this.appointmentRepository
       .createQueryBuilder('appointment')
       .leftJoinAndSelect('appointment.calendar', 'calendar')
+      .leftJoin('calendar.owner', 'calendarOwner')
+      .addSelect('calendarOwner.uuid')
       .leftJoinAndSelect('appointment.client', 'client')
       .leftJoinAndSelect('appointment.userService', 'userService')
       .leftJoinAndSelect('userService.user', 'employee')
@@ -85,13 +137,17 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const [appointments, total] = await qb.getManyAndCount();
 
-    return createPaginatedResponse(appointments, total, paginationParams);
+    return createPaginatedResponse(
+      await this._toResponsesWithOverlaps(appointments),
+      total,
+      paginationParams,
+    );
   }
 
   public async findByCalendar(
     calendarUuid: string,
     paginationParams: PaginationParamsDto,
-  ): Promise<PaginatedResultDto<Appointment>> {
+  ): Promise<PaginatedResultDto<AppointmentResponse>> {
     const { page, limit } = paginationParams;
     const skip = (page - 1) * limit;
 
@@ -99,6 +155,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       {
         where: { calendar: { uuid: calendarUuid }, deleted: false },
         relations: [
+          'calendar',
+          'calendar.owner',
           'client',
           'userService',
           'userService.user',
@@ -110,35 +168,37 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       },
     );
 
-    return createPaginatedResponse(appointments, total, paginationParams);
+    return createPaginatedResponse(
+      await this._toResponsesWithOverlaps(appointments),
+      total,
+      paginationParams,
+    );
   }
 
   public async find(uuid: string): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid, deleted: false },
-      relations: [
-        'calendar',
-        'client',
-        'userService',
-        'userService.user',
-        'userService.service',
-        'createdBy',
-      ],
-    });
+    const appointment = await this._findNotDeleted(uuid, [
+      'calendar',
+      'calendar.owner',
+      'client',
+      'userService',
+      'userService.user',
+      'userService.service',
+      'createdBy',
+    ]);
 
-    if (!appointment) throw new AppointmentNotFoundException();
+    const [response] = await this._toResponsesWithOverlaps([appointment]);
 
-    return ResponseHelper.success(
-      'Appointment found',
-      HttpStatus.OK,
-      appointment,
-    );
+    return ResponseHelper.success('Appointment found', HttpStatus.OK, response);
   }
 
   public async create(
     createAppointmentDto: CreateAppointmentDto,
-    clientUuid?: string,
+    options: CreateAppointmentOptions = {},
   ): Promise<ResponseDto> {
+    const scheduledAt = new Date(createAppointmentDto.scheduledAt);
+
+    this._assertNotInPast(scheduledAt);
+
     const userService = await this.usersServicesRepository.findOne({
       where: { uuid: createAppointmentDto.userServiceId },
       relations: ['user', 'service'],
@@ -150,9 +210,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       );
     }
 
+    this._assertUserServiceAvailable(userService);
+
     const calendar = await this.calendarRepository.findOneBy({
       owner: { uuid: userService.user.uuid },
       isDefault: true,
+      active: true,
       deleted: false,
     });
 
@@ -162,25 +225,33 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       );
     }
 
-    const scheduledAt = new Date(createAppointmentDto.scheduledAt);
-    const scheduledEndAt = new Date(
-      scheduledAt.getTime() + userService.duration * 60 * 1000,
-    );
-
-    await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
-
-    let client: Client | null = null;
-    if (clientUuid) {
-      client = await this.clientRepository.findOneBy({ uuid: clientUuid });
-    }
+    const client = await this._findClient(options.clientUuid);
 
     const clientEmail =
       client?.email ?? createAppointmentDto.clientEmail ?? null;
+
+    if (!clientEmail) throw new AppointmentClientEmailRequiredException();
+
+    const scheduledEndAt = new Date(
+      scheduledAt.getTime() + userService.duration * MINUTE_MS,
+    );
+
+    const salon = await this._assertClientBookable(
+      scheduledAt,
+      scheduledEndAt,
+      options.bookedByClient,
+    );
+
     const clientPhone =
       client?.phone ?? createAppointmentDto.clientPhone ?? null;
+    const guestName = client ? null : (createAppointmentDto.clientName ?? null);
     const clientName = client
       ? `${client.firstName} ${client.lastName}`
-      : (clientEmail ?? 'Klient');
+      : (guestName ?? clientEmail);
+    const status =
+      options.bookedByClient && salon.autoConfirmClientBookings
+        ? AppointmentStatus.CONFIRMED
+        : AppointmentStatus.PENDING;
 
     const name = `${userService.service.name} — ${userService.user.firstName} ${userService.user.lastName}`;
 
@@ -191,16 +262,27 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       userService,
       price: userService.price,
       duration: userService.duration,
-      status: AppointmentStatus.PENDING,
+      status,
+      type: AppointmentType.CLIENT,
       note: createAppointmentDto.note,
+      clientName: guestName,
       clientEmail,
       clientPhone,
       scheduledAt,
       scheduledEndAt,
-      createdBy: userService.user,
+      createdBy: this._userReference(options.createdByUuid),
     });
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(appointment, { employeeUuid: userService.user.uuid });
+
+    await this._audit('created', appointment.uuid, {
+      metadata: {
+        type: AppointmentType.CLIENT,
+        status,
+        bookedByClient: Boolean(options.bookedByClient),
+      },
+      guestLabel: clientEmail,
+    });
 
     const mailData: AppointmentMailData = {
       clientName,
@@ -212,11 +294,15 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       note: createAppointmentDto.note,
     };
 
-    if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
-      );
-    }
+    this._sendClientMailSafe(
+      clientEmail,
+      mailData,
+      (email, data) =>
+        status === AppointmentStatus.CONFIRMED
+          ? this.mailService.sendAppointmentConfirmedToClient(email, data)
+          : this.mailService.sendAppointmentCreatedToClient(email, data),
+      Boolean(client),
+    );
 
     this._sendMailSafe(() =>
       this.mailService.sendAppointmentCreatedToEmployee(
@@ -227,43 +313,60 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
+      status,
+      overlaps: await this._findOverlapsFor(appointment),
     });
   }
 
   public async createInternal(
     dto: CreateInternalAppointmentDto,
+    createdByUuid?: string,
   ): Promise<ResponseDto> {
+    const scheduledAt = new Date(dto.scheduledAt);
+    const scheduledEndAt = new Date(dto.scheduledEndAt);
+
+    this._assertNotInPast(scheduledAt);
+
+    const duration = this._getDurationInMinutes(scheduledAt, scheduledEndAt);
+
+    if (dto.duration !== undefined && dto.duration !== duration) {
+      throw new AppointmentDurationMismatchException();
+    }
+
     const owner = await this.userRepository.findOneBy({ uuid: dto.ownerId });
     if (!owner)
       throw new UserNotFoundException('Pracownik nie został znaleziony');
 
-    const calendar = await this.calendarRepository.findOneBy({
-      uuid: dto.calendarId,
+    const calendar = await this.calendarRepository.findOne({
+      where: { uuid: dto.calendarId, active: true, deleted: false },
+      relations: ['owner'],
     });
     if (!calendar)
       throw new CalendarNotFoundException('Kalendarz nie został znaleziony');
 
-    const scheduledAt = new Date(dto.scheduledAt);
-    const scheduledEndAt = new Date(dto.scheduledEndAt);
-
-    await this._checkConflict(calendar.uuid, scheduledAt, scheduledEndAt);
-
-    let client: Client | null = null;
-    if (dto.clientId) {
-      client = await this.clientRepository.findOneBy({ uuid: dto.clientId });
+    if (calendar.owner?.uuid !== owner.uuid) {
+      throw new AppointmentRelationMismatchException(
+        'Kalendarz nie należy do wskazanego pracownika',
+      );
     }
 
+    const client = await this._findClient(dto.clientId);
+
     let userService: UsersServices | null = null;
-    let price: number | null = null;
-    let duration: number | null = dto.duration ?? null;
 
     if (dto.userServiceId) {
       userService = await this.usersServicesRepository.findOne({
         where: { uuid: dto.userServiceId },
-        relations: ['service'],
+        relations: ['user', 'service'],
       });
-      price = userService?.price ?? null;
-      duration = duration ?? userService?.duration ?? null;
+
+      if (!userService) throw new UserServiceNotFoundException();
+
+      if (userService.user?.uuid !== owner.uuid) {
+        throw new AppointmentRelationMismatchException(
+          'Usługa nie jest przypisana do wskazanego pracownika',
+        );
+      }
     }
 
     const appointment = this.appointmentRepository.create({
@@ -271,21 +374,27 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       calendar,
       client,
       userService,
-      price,
+      price: userService?.price ?? null,
       duration,
       status: AppointmentStatus.CONFIRMED,
+      type: AppointmentType.INTERNAL,
       note: dto.note,
       meetingLink: dto.meetingLink,
       eventLocalization: dto.eventLocalization,
       scheduledAt,
       scheduledEndAt,
-      createdBy: owner,
+      createdBy: this._userReference(createdByUuid),
     });
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(appointment);
+
+    await this._audit('created', appointment.uuid, {
+      metadata: { type: AppointmentType.INTERNAL },
+    });
 
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
+      overlaps: await this._findOverlapsFor(appointment),
     });
   }
 
@@ -293,47 +402,93 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     uuid: string,
     dto: UpdateAppointmentDto,
   ): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid },
-      relations: ['calendar'],
-    });
+    const appointment = await this._findNotDeleted(uuid, [
+      'calendar',
+      'calendar.owner',
+    ]);
 
-    if (!appointment) throw new AppointmentNotFoundException();
+    this._assertNotCancelled(appointment);
 
-    if (dto.scheduledAt || dto.scheduledEndAt) {
+    const previousStatus = appointment.status;
+    const datesChanged = Boolean(
+      dto.scheduledAt || dto.scheduledEndAt || dto.duration !== undefined,
+    );
+
+    if (datesChanged) {
+      this._assertNotCompleted(
+        appointment,
+        'Zakończonej wizyty nie można przełożyć',
+      );
+
       const scheduledAt = dto.scheduledAt
         ? new Date(dto.scheduledAt)
         : appointment.scheduledAt;
 
-      const scheduledEndAt = dto.scheduledEndAt
-        ? new Date(dto.scheduledEndAt)
-        : appointment.scheduledEndAt;
+      if (dto.scheduledAt) this._assertNotInPast(scheduledAt);
 
-      await this._checkConflict(
-        appointment.calendar.uuid,
-        scheduledAt,
-        scheduledEndAt,
-        uuid,
-      );
+      let scheduledEndAt = appointment.scheduledEndAt;
+
+      if (dto.scheduledEndAt) {
+        scheduledEndAt = new Date(dto.scheduledEndAt);
+      } else if (dto.duration !== undefined) {
+        scheduledEndAt = new Date(
+          scheduledAt.getTime() + dto.duration * MINUTE_MS,
+        );
+      }
+
+      if (scheduledEndAt <= scheduledAt) {
+        throw new AppointmentInvalidDateRangeException();
+      }
+
+      const duration = this._getDurationInMinutes(scheduledAt, scheduledEndAt);
+
+      if (dto.duration !== undefined && dto.duration !== duration) {
+        throw new AppointmentDurationMismatchException();
+      }
+
+      if (appointment.type === AppointmentType.CLIENT) {
+        await this._assertClientBookable(scheduledAt, scheduledEndAt);
+      }
 
       appointment.scheduledAt = scheduledAt;
       appointment.scheduledEndAt = scheduledEndAt;
+      appointment.duration = duration;
     }
 
     if (dto.name) appointment.name = dto.name;
     if (dto.status) appointment.status = dto.status;
-    if (dto.duration !== undefined) appointment.duration = dto.duration;
     if (dto.note !== undefined) appointment.note = dto.note;
     if (dto.meetingLink !== undefined)
       appointment.meetingLink = dto.meetingLink;
     if (dto.eventLocalization !== undefined)
       appointment.eventLocalization = dto.eventLocalization;
 
-    await this.appointmentRepository.save(appointment);
+    await this._save(
+      appointment,
+      datesChanged
+        ? { employeeUuid: appointment.calendar.owner.uuid, excludeUuid: uuid }
+        : undefined,
+    );
 
-    if (dto.status === AppointmentStatus.CONFIRMED) {
+    if (
+      dto.status === AppointmentStatus.CONFIRMED &&
+      previousStatus !== AppointmentStatus.CONFIRMED
+    ) {
       await this._sendConfirmedMail(appointment);
     }
+
+    const statusChanged = dto.status && dto.status !== previousStatus;
+    await this._audit(
+      statusChanged && STATUS_ACTIONS[dto.status]
+        ? STATUS_ACTIONS[dto.status]
+        : 'updated',
+      uuid,
+      {
+        metadata: {
+          fields: Object.keys(dto).filter(key => dto[key] !== undefined),
+        },
+      },
+    );
 
     return ResponseHelper.updated('Wizyta została zaktualizowana', uuid);
   }
@@ -342,21 +497,21 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     uuid: string,
     dto: CancelAppointmentDto,
   ): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid },
-      relations: [
-        'client',
-        'userService',
-        'userService.user',
-        'userService.service',
-      ],
-    });
-
-    if (!appointment) throw new AppointmentNotFoundException();
+    const appointment = await this._findNotDeleted(uuid, [
+      'client',
+      'userService',
+      'userService.user',
+      'userService.service',
+    ]);
 
     if (appointment.status === AppointmentStatus.CANCELLED) {
       throw new AppointmentAlreadyCancelledException();
     }
+
+    this._assertNotCompleted(
+      appointment,
+      'Zakończonej wizyty nie można anulować',
+    );
 
     appointment.status = AppointmentStatus.CANCELLED;
     appointment.cancelledBy = dto.cancelledBy;
@@ -364,6 +519,13 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     appointment.cancellationReason = dto.cancellationReason ?? null;
 
     await this.appointmentRepository.save(appointment);
+
+    await this._audit('cancelled', uuid, {
+      metadata: {
+        cancelledBy: dto.cancelledBy,
+        reason: dto.cancellationReason ?? null,
+      },
+    });
 
     const mailData: AppointmentCancelledMailData = {
       clientName: this._getClientName(appointment),
@@ -378,11 +540,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentCancelledToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentCancelledToClient(email, data),
+        Boolean(appointment.client),
       );
     }
 
@@ -401,33 +564,35 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   public async reschedule(
     uuid: string,
     dto: RescheduleAppointmentDto,
+    options: RescheduleAppointmentOptions = {},
   ): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { uuid },
-      relations: [
-        'calendar',
-        'client',
-        'userService',
-        'userService.user',
-        'userService.service',
-      ],
-    });
+    const appointment = await this._findNotDeleted(uuid, [
+      'calendar',
+      'calendar.owner',
+      'client',
+      'userService',
+      'userService.user',
+      'userService.service',
+    ]);
 
-    if (!appointment) throw new AppointmentNotFoundException();
-
-    if (appointment.status === AppointmentStatus.CANCELLED) {
-      throw new AppointmentAlreadyCancelledException();
-    }
+    this._assertNotCancelled(appointment);
+    this._assertNotCompleted(
+      appointment,
+      'Zakończonej wizyty nie można przełożyć',
+    );
 
     const scheduledAt = new Date(dto.scheduledAt);
     const scheduledEndAt = new Date(dto.scheduledEndAt);
 
-    await this._checkConflict(
-      appointment.calendar.uuid,
-      scheduledAt,
-      scheduledEndAt,
-      uuid,
-    );
+    this._assertNotInPast(scheduledAt);
+
+    if (appointment.type === AppointmentType.CLIENT) {
+      await this._assertClientBookable(
+        scheduledAt,
+        scheduledEndAt,
+        options.bookedByClient,
+      );
+    }
 
     const previousScheduledAt = appointment.scheduledAt;
     const previousScheduledEndAt = appointment.scheduledEndAt;
@@ -436,13 +601,26 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     appointment.previousScheduledEndAt = previousScheduledEndAt;
     appointment.scheduledAt = scheduledAt;
     appointment.scheduledEndAt = scheduledEndAt;
+    appointment.duration = this._getDurationInMinutes(
+      scheduledAt,
+      scheduledEndAt,
+    );
     appointment.status = AppointmentStatus.RESCHEDULED;
     appointment.rescheduledBy = dto.rescheduledBy;
     appointment.rescheduledAt = new Date();
+    appointment.rescheduleReason = dto.rescheduleReason ?? null;
 
-    if (dto.note !== undefined) appointment.note = dto.note;
+    await this._save(appointment, {
+      employeeUuid: appointment.calendar.owner.uuid,
+      excludeUuid: uuid,
+    });
 
-    await this.appointmentRepository.save(appointment);
+    await this._audit('rescheduled', uuid, {
+      metadata: {
+        rescheduledBy: dto.rescheduledBy,
+        reason: dto.rescheduleReason ?? null,
+      },
+    });
 
     const mailData: AppointmentRescheduledMailData = {
       clientName: this._getClientName(appointment),
@@ -454,15 +632,17 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       previousScheduledAt,
       previousScheduledEndAt,
       rescheduledBy: dto.rescheduledBy,
+      rescheduleReason: dto.rescheduleReason,
     };
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentRescheduledToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentRescheduledToClient(email, data),
+        Boolean(appointment.client),
       );
     }
 
@@ -479,14 +659,142 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   }
 
   public async remove(uuid: string): Promise<ResponseDto> {
-    const appointment = await this.appointmentRepository.findOneBy({ uuid });
-
-    if (!appointment) throw new AppointmentNotFoundException();
+    const appointment = await this._findNotDeleted(uuid);
 
     appointment.deleted = true;
     await this.appointmentRepository.save(appointment);
 
+    await this._audit('deleted', uuid);
+
     return ResponseHelper.deleted('Wizyta została usunięta');
+  }
+
+  private async _findNotDeleted(
+    uuid: string,
+    relations: string[] = [],
+  ): Promise<Appointment> {
+    const appointment = await this.appointmentRepository.findOne({
+      where: { uuid, deleted: false },
+      relations,
+    });
+
+    if (!appointment) throw new AppointmentNotFoundException();
+
+    return appointment;
+  }
+
+  private _assertNotCancelled(appointment: Appointment): void {
+    if (appointment.status === AppointmentStatus.CANCELLED) {
+      throw new AppointmentNotModifiableException(
+        'Anulowanej wizyty nie można modyfikować',
+      );
+    }
+  }
+
+  private _assertNotCompleted(appointment: Appointment, message: string): void {
+    if (appointment.status === AppointmentStatus.COMPLETED) {
+      throw new AppointmentNotModifiableException(message);
+    }
+  }
+
+  private _assertNotInPast(scheduledAt: Date): void {
+    if (scheduledAt.getTime() <= Date.now()) {
+      throw new AppointmentInPastException();
+    }
+  }
+
+  private async _assertClientBookable(
+    scheduledAt: Date,
+    scheduledEndAt: Date,
+    bookedByClient = false,
+  ): Promise<Salon> {
+    const salon = await this.salonService.getBookingSettings();
+
+    if (bookedByClient) this._assertWithinBookingWindow(salon, scheduledAt);
+
+    await this._assertWithinOpeningHours(salon, scheduledAt, scheduledEndAt);
+
+    return salon;
+  }
+
+  private _assertWithinBookingWindow(salon: Salon, scheduledAt: Date): void {
+    const now = Date.now();
+    const start = scheduledAt.getTime();
+
+    if (start < now + salon.clientMinLeadTimeMinutes * MINUTE_MS) {
+      throw new AppointmentLeadTimeException(salon.clientMinLeadTimeMinutes);
+    }
+
+    if (start > now + salon.maxBookingDaysAhead * DAY_MS) {
+      throw new AppointmentBeyondBookingHorizonException(
+        salon.maxBookingDaysAhead,
+      );
+    }
+  }
+
+  private async _assertWithinOpeningHours(
+    salon: Salon,
+    scheduledAt: Date,
+    scheduledEndAt: Date,
+  ): Promise<void> {
+    const start = toLocalDateTime(scheduledAt, salon.timeZone);
+    const end = toLocalDateTime(scheduledEndAt, salon.timeZone);
+    const openingRanges = await this.salonService.findOpeningRanges(
+      salon,
+      start.date,
+    );
+
+    const fitsInRange =
+      start.date === end.date &&
+      openingRanges.some(
+        ({ opensAt, closesAt }) =>
+          toMinutes(opensAt) <= start.minutes &&
+          end.minutes <= toMinutes(closesAt),
+      );
+
+    if (!fitsInRange) {
+      throw new AppointmentOutsideOpeningHoursException(
+        start.date,
+        openingRanges,
+      );
+    }
+  }
+
+  private _assertUserServiceAvailable(userService: UsersServices): void {
+    const { service, user } = userService;
+
+    if (!userService.active || !service?.active || service.deleted) {
+      throw new AppointmentUnavailableException();
+    }
+
+    if (!user?.active || user.deleted) {
+      throw new AppointmentUnavailableException(
+        'Wybrany pracownik jest niedostępny',
+      );
+    }
+  }
+
+  private _userReference(uuid?: string): User | null {
+    return uuid ? ({ uuid } as User) : null;
+  }
+
+  private async _findClient(uuid?: string): Promise<Client | null> {
+    if (!uuid) return null;
+
+    const client = await this.clientRepository.findOneBy({ uuid });
+
+    if (!client) throw new ClientNotFoundException();
+
+    return client;
+  }
+
+  private _getDurationInMinutes(
+    scheduledAt: Date,
+    scheduledEndAt: Date,
+  ): number {
+    return Math.round(
+      (scheduledEndAt.getTime() - scheduledAt.getTime()) / 60000,
+    );
   }
 
   private async _sendConfirmedMail(appointment: Appointment): Promise<void> {
@@ -514,11 +822,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const clientEmail =
       fullAppointment.client?.email ?? fullAppointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentConfirmedToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentConfirmedToClient(email, data),
+        Boolean(fullAppointment.client),
       );
     }
   }
@@ -527,7 +836,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     if (appointment.client?.firstName) {
       return `${appointment.client.firstName} ${appointment.client.lastName}`;
     }
-    return appointment.clientEmail ?? 'Klient';
+    return appointment.clientName ?? appointment.clientEmail ?? 'Klient';
   }
 
   private _getEmployeeName(appointment: Appointment): string {
@@ -537,28 +846,94 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     return 'Pracownik';
   }
 
+  private _audit(
+    action: string,
+    appointmentUuid: string,
+    entry: Pick<AuditLogEntry, 'metadata' | 'guestLabel'> = {},
+  ): Promise<void> {
+    return this.auditLogService.record({
+      action: `appointment.${action}`,
+      entityType: 'appointment',
+      entityId: appointmentUuid,
+      ...entry,
+    });
+  }
+
   private _sendMailSafe(fn: () => Promise<void>): void {
     fn().catch(error => {
       this.logger.error('Błąd wysyłania maila', error);
     });
   }
 
-  private async _checkConflict(
-    calendarUuid: string,
-    scheduledAt: Date,
-    scheduledEndAt: Date,
-    excludeUuid?: string,
+  private _sendClientMailSafe<T extends AppointmentMailData>(
+    email: string,
+    mailData: T,
+    send: (email: string, data: T) => Promise<void>,
+    hasAccount = false,
+  ): void {
+    this._sendMailSafe(async () => {
+      const manageUrl = await this.bookingAccessService.createManageUrl(email);
+      const accountUrl = hasAccount
+        ? this.configService.get<string>('CLIENT_ACCOUNT_URL')
+        : undefined;
+
+      await send(email, {
+        ...mailData,
+        manageUrl: manageUrl ?? undefined,
+        accountUrl: accountUrl || undefined,
+      });
+    });
+  }
+
+  private async _save(
+    appointment: Appointment,
+    conflictCheck?: { employeeUuid: string; excludeUuid?: string },
+  ): Promise<Appointment> {
+    if (!conflictCheck || appointment.type !== AppointmentType.CLIENT) {
+      return this.appointmentRepository.save(appointment);
+    }
+
+    return this.dataSource.transaction(async manager => {
+      // Serializes bookings per employee so concurrent requests cannot both pass the conflict check
+      await manager
+        .getRepository(User)
+        .createQueryBuilder('user')
+        .setLock('pessimistic_write')
+        .where('user.uuid = :employeeUuid', {
+          employeeUuid: conflictCheck.employeeUuid,
+        })
+        .getOne();
+
+      await this._checkClientConflict(manager, appointment, conflictCheck);
+
+      return manager.getRepository(Appointment).save(appointment);
+    });
+  }
+
+  private async _checkClientConflict(
+    manager: EntityManager,
+    appointment: Appointment,
+    {
+      employeeUuid,
+      excludeUuid,
+    }: { employeeUuid: string; excludeUuid?: string },
   ): Promise<void> {
-    const qb = this.appointmentRepository
+    const qb = manager
+      .getRepository(Appointment)
       .createQueryBuilder('appointment')
-      .where('appointment.calendar = :calendarUuid', { calendarUuid })
+      .innerJoin('appointment.calendar', 'calendar')
+      .where('calendar.owner = :employeeUuid', { employeeUuid })
+      .andWhere('appointment.type = :type', { type: AppointmentType.CLIENT })
       .andWhere('appointment.status != :cancelled', {
         cancelled: AppointmentStatus.CANCELLED,
       })
       .andWhere('appointment.deleted = false')
       .andWhere(
         '(appointment.scheduledAt < :scheduledEndAt AND appointment.scheduledEndAt > :scheduledAt)',
-        { scheduledAt, scheduledEndAt },
+        {
+          scheduledAt: appointment.scheduledAt,
+          scheduledEndAt: appointment.scheduledEndAt,
+        },
       );
 
     if (excludeUuid) {
@@ -568,5 +943,82 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const conflict = await qb.getOne();
 
     if (conflict) throw new AppointmentConflictException();
+  }
+
+  private async _toResponsesWithOverlaps(
+    appointments: Appointment[],
+  ): Promise<AppointmentResponse[]> {
+    const overlaps = await this._findOverlaps(appointments);
+
+    return appointments.map(appointment =>
+      toAppointmentResponse(appointment, overlaps.get(appointment.uuid)),
+    );
+  }
+
+  private async _findOverlapsFor(
+    appointment: Appointment,
+  ): Promise<AppointmentOverlapResponse[]> {
+    const overlaps = await this._findOverlaps([appointment]);
+
+    return overlaps.get(appointment.uuid) ?? [];
+  }
+
+  private async _findOverlaps(
+    appointments: Appointment[],
+  ): Promise<Map<string, AppointmentOverlapResponse[]>> {
+    const overlaps = new Map<string, AppointmentOverlapResponse[]>();
+
+    const relevant = appointments.filter(
+      appointment =>
+        appointment.status !== AppointmentStatus.CANCELLED &&
+        appointment.calendar?.owner?.uuid,
+    );
+
+    if (!relevant.length) return overlaps;
+
+    const employeeUuids = [
+      ...new Set(relevant.map(appointment => appointment.calendar.owner.uuid)),
+    ];
+    const from = new Date(
+      Math.min(
+        ...relevant.map(appointment => appointment.scheduledAt.getTime()),
+      ),
+    );
+    const to = new Date(
+      Math.max(
+        ...relevant.map(appointment => appointment.scheduledEndAt.getTime()),
+      ),
+    );
+
+    const candidates = await this.appointmentRepository
+      .createQueryBuilder('appointment')
+      .innerJoinAndSelect('appointment.calendar', 'calendar')
+      .innerJoinAndSelect('calendar.owner', 'owner')
+      .where('owner.uuid IN (:...employeeUuids)', { employeeUuids })
+      .andWhere('appointment.status != :cancelled', {
+        cancelled: AppointmentStatus.CANCELLED,
+      })
+      .andWhere('appointment.deleted = false')
+      .andWhere('appointment.scheduledAt < :to', { to })
+      .andWhere('appointment.scheduledEndAt > :from', { from })
+      .getMany();
+
+    for (const appointment of relevant) {
+      overlaps.set(
+        appointment.uuid,
+        candidates
+          .filter(
+            candidate =>
+              candidate.uuid !== appointment.uuid &&
+              candidate.calendar.owner.uuid ===
+                appointment.calendar.owner.uuid &&
+              candidate.scheduledAt < appointment.scheduledEndAt &&
+              candidate.scheduledEndAt > appointment.scheduledAt,
+          )
+          .map(toAppointmentOverlapResponse),
+      );
+    }
+
+    return overlaps;
   }
 }

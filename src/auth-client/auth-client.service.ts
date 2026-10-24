@@ -12,6 +12,12 @@ import { InvalidRefreshTokenException } from '@/auth/exceptions/invalid-refresh-
 import { ClientEmailNotVerifiedException } from '@/clients/exceptions/client-email-not-verified.exception';
 import { StringValue } from 'ms';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
+import {
+  CLIENT_TOKEN_TYPE,
+  getClientAccessTokenSecret,
+} from '@/auth-client/constants';
+
+export const CLIENT_REFRESH_TOKEN_TTL_DAYS = 7;
 
 @Injectable()
 export class AuthClientService {
@@ -37,16 +43,17 @@ export class AuthClientService {
 
     if (!client) throw new InvalidCredentialsException();
 
-    if (!client.emailVerified) throw new ClientEmailNotVerifiedException();
-
-    if (!client.active) throw new InvalidCredentialsException();
-
+    // Hasło sprawdzamy przed statusem konta, żeby nie ujawniać stanu konta bez znajomości hasła
     const isPasswordValid = await compare(
       clientLoginDto.password,
       client.password,
     );
 
     if (!isPasswordValid) throw new InvalidCredentialsException();
+
+    if (!client.emailVerified) throw new ClientEmailNotVerifiedException();
+
+    if (!client.active) throw new InvalidCredentialsException();
 
     const tokens = await this._generateTokens(client.uuid);
 
@@ -64,6 +71,15 @@ export class AuthClientService {
     });
 
     if (!existingToken) throw new InvalidRefreshTokenException();
+
+    // Tokeny bez daty wygaśnięcia (sprzed wprowadzenia kolumny) traktujemy jak wygasłe
+    const isExpired =
+      !existingToken.expiryDate || existingToken.expiryDate < new Date();
+
+    if (isExpired || !existingToken.client?.active) {
+      await this.clientRefreshTokenRepository.delete({ token: refreshToken });
+      throw new InvalidRefreshTokenException();
+    }
 
     const newTokens = await this._generateTokens(existingToken.client.uuid);
 
@@ -84,11 +100,9 @@ export class AuthClientService {
     clientId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const accessToken = this.jwtService.sign(
-      { clientId, type: 'client' },
+      { clientId, type: CLIENT_TOKEN_TYPE },
       {
-        secret: this.configService.get<string>(
-          'JWT_CLIENT_ACCESS_TOKEN_SECRET_KEY',
-        ),
+        secret: getClientAccessTokenSecret(this.configService),
         expiresIn: this.configService.get<StringValue>(
           'JWT_ACCESS_TOKEN_EXPIRES_IN',
         ),
@@ -97,14 +111,12 @@ export class AuthClientService {
 
     const refreshToken = crypto.randomUUID();
 
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 7);
-
     const client = { uuid: clientId } as Client;
 
     await this.clientRefreshTokenRepository.save({
       token: refreshToken,
       client,
+      expiryDate: this._getRefreshTokenExpiryDate(),
     });
 
     return { accessToken, refreshToken };
@@ -118,7 +130,20 @@ export class AuthClientService {
 
     if (!client) throw new ClientNotFoundException();
 
-    await this.clientRefreshTokenRepository.save({ client, token });
+    await this.clientRefreshTokenRepository.save({
+      client,
+      token,
+      expiryDate: this._getRefreshTokenExpiryDate(),
+    });
+  }
+
+  private _getRefreshTokenExpiryDate(): Date {
+    const expiryDate = new Date();
+    expiryDate.setDate(
+      expiryDate.getDate() + CLIENT_REFRESH_TOKEN_TTL_DAYS,
+    );
+
+    return expiryDate;
   }
 
   public async removeRefreshToken(token: string): Promise<void> {

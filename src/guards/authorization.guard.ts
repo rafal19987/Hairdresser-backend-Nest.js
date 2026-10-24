@@ -14,6 +14,7 @@ import {
     UsersServiceInterface,
 } from '@/users/interfaces/users-service.interface';
 import {UserNotFoundException} from "@/users/exceptions/user-not-found.exception";
+import {UserNotActiveException} from "@/users/exceptions/user-not-active.exception";
 
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
@@ -46,6 +47,9 @@ export class AuthorizationGuard implements CanActivate {
         } catch (e) {
             if (e instanceof UserNotFoundException) {
                 throw new UnauthorizedException('User not found');
+            }
+            if (e instanceof UserNotActiveException) {
+                throw new UnauthorizedException('User not active');
             }
             throw new InternalServerErrorException('Error fetching user permissions');
         }

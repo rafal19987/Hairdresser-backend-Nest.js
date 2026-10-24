@@ -2,27 +2,44 @@ import { applyDecorators } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiBody, ApiParam } from '@nestjs/swagger';
 import { LoginDto } from '@/auth/dto/login.dto';
 import { SetPasswordDto } from '@/auth/dto/set-password.dto';
+import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 
 export function ApiLogin() {
-    return applyDecorators(
-      ApiOperation({
-        summary: 'Zaloguj użytkownika',
-        description: 'Logowanie za pomocą email i hasła',
-      }),
-      ApiBody({ type: LoginDto }),
-      ApiResponse({ status: 200, description: 'Zalogowano pomyślnie' }),
-      ApiResponse({ status: 400, description: 'Nieprawidłowe dane' }),
-      ApiResponse({ status: 401, description: 'Błędny login lub hasło' }),
-      ApiResponse({ status: 429, description: 'Zbyt wiele prób logowania' }),
-    );
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Zaloguj użytkownika',
+      description: 'Logowanie za pomocą email i hasła',
+    }),
+    ApiBody({ type: LoginDto }),
+    ApiResponse({ status: 200, description: 'Zalogowano pomyślnie' }),
+    ApiResponse({ status: 400, description: 'Nieprawidłowe dane' }),
+    ApiResponse({ status: 401, description: 'Błędny login lub hasło' }),
+    ApiResponse({ status: 429, description: 'Zbyt wiele prób logowania' }),
+  );
 }
 
 export function ApiLogout() {
-    return applyDecorators(
-      ApiOperation({ summary: 'Wyloguj użytkownika' }),
-      ApiResponse({ status: 200, description: 'Wylogowano pomyślnie' }),
-      ApiResponse({ status: 401, description: 'Nieprawidłowy token' }),
-    );
+  return applyDecorators(
+    ApiOperation({ summary: 'Wyloguj użytkownika' }),
+    ApiResponse({ status: 200, description: 'Wylogowano pomyślnie' }),
+    ApiResponse({ status: 401, description: 'Nieprawidłowy token' }),
+  );
+}
+
+export function ApiRefresh() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Odśwież tokeny',
+      description:
+        'Wymienia refresh token na nową parę access + refresh token. Stary refresh token zostaje unieważniony.',
+    }),
+    ApiBody({ type: RefreshTokenDto }),
+    ApiResponse({ status: 200, description: 'Nowe tokeny wygenerowane' }),
+    ApiResponse({
+      status: 401,
+      description: 'Refresh token nieprawidłowy, wygasły lub konto nieaktywne',
+    }),
+  );
 }
 
 export function ApiVerifyToken() {

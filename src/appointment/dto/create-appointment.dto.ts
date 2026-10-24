@@ -8,6 +8,7 @@ import {
   Length,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { HasTimeZone } from '@/appointment/validators/has-time-zone.validator';
 
 export class CreateAppointmentDto {
   @ApiProperty({ example: 'uuid-user-service' })
@@ -18,9 +19,25 @@ export class CreateAppointmentDto {
   @ApiProperty({ example: '2026-03-01T10:00:00.000Z' })
   @IsNotEmpty()
   @IsDateString()
+  @HasTimeZone()
   scheduledAt: string;
 
-  @ApiProperty({ example: 'jan@example.com', required: false })
+  @ApiProperty({
+    example: 'Jan Kowalski',
+    required: false,
+    description: 'Imię i nazwisko klienta bez konta',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 200)
+  clientName?: string;
+
+  @ApiProperty({
+    example: 'jan@example.com',
+    required: false,
+    description:
+      'Wymagany, jeśli rezerwacja nie jest powiązana z kontem klienta',
+  })
   @IsOptional()
   @IsEmail()
   clientEmail?: string;

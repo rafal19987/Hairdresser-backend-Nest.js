@@ -9,10 +9,11 @@ import { USERS_SERVICE } from './interfaces/users-service.interface';
 import { RolesModule } from '@/roles/roles.module';
 import { MailModule } from '@/mail/mail.module';
 import { RefreshToken } from '@/auth/entities/refresh-token.entity';
+import { Appointment } from '@/appointment/entities/appointment.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Role, RefreshToken]),
+    TypeOrmModule.forFeature([User, Role, RefreshToken, Appointment]),
     forwardRef(() => AuthModule),
     forwardRef(() => RolesModule),
     MailModule,
