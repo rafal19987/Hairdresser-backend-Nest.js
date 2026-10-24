@@ -57,6 +57,8 @@ import { UserNotFoundException } from '@/users/exceptions/user-not-found.excepti
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { MailService } from '@/mail/mail.service';
 import { BookingAccessService } from '@/booking-access/booking-access.service';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { AuditLogEntry } from '@/audit-log/interfaces/audit-log-entry.interface';
 import {
   AppointmentMailData,
   AppointmentCancelledMailData,
@@ -64,6 +66,12 @@ import {
 } from '@/mail/interfaces/mail.interface';
 
 const MINUTE_MS = 60 * 1000;
+
+// Status changes made through update get their own audit action
+const STATUS_ACTIONS: Partial<Record<AppointmentStatus, string>> = {
+  [AppointmentStatus.CONFIRMED]: 'confirmed',
+  [AppointmentStatus.COMPLETED]: 'completed',
+};
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
 @Injectable()
@@ -87,6 +95,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     private readonly salonService: SalonServiceInterface,
     private readonly bookingAccessService: BookingAccessService,
     private readonly configService: ConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   public async findAll(
@@ -266,6 +275,15 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     await this._save(appointment, { employeeUuid: userService.user.uuid });
 
+    await this._audit('created', appointment.uuid, {
+      metadata: {
+        type: AppointmentType.CLIENT,
+        status,
+        bookedByClient: Boolean(options.bookedByClient),
+      },
+      guestLabel: clientEmail,
+    });
+
     const mailData: AppointmentMailData = {
       clientName,
       employeeName: `${userService.user.firstName} ${userService.user.lastName}`,
@@ -370,6 +388,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     await this._save(appointment);
 
+    await this._audit('created', appointment.uuid, {
+      metadata: { type: AppointmentType.INTERNAL },
+    });
+
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
       overlaps: await this._findOverlapsFor(appointment),
@@ -455,6 +477,19 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       await this._sendConfirmedMail(appointment);
     }
 
+    const statusChanged = dto.status && dto.status !== previousStatus;
+    await this._audit(
+      statusChanged && STATUS_ACTIONS[dto.status]
+        ? STATUS_ACTIONS[dto.status]
+        : 'updated',
+      uuid,
+      {
+        metadata: {
+          fields: Object.keys(dto).filter(key => dto[key] !== undefined),
+        },
+      },
+    );
+
     return ResponseHelper.updated('Wizyta została zaktualizowana', uuid);
   }
 
@@ -484,6 +519,13 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     appointment.cancellationReason = dto.cancellationReason ?? null;
 
     await this.appointmentRepository.save(appointment);
+
+    await this._audit('cancelled', uuid, {
+      metadata: {
+        cancelledBy: dto.cancelledBy,
+        reason: dto.cancellationReason ?? null,
+      },
+    });
 
     const mailData: AppointmentCancelledMailData = {
       clientName: this._getClientName(appointment),
@@ -573,6 +615,13 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       excludeUuid: uuid,
     });
 
+    await this._audit('rescheduled', uuid, {
+      metadata: {
+        rescheduledBy: dto.rescheduledBy,
+        reason: dto.rescheduleReason ?? null,
+      },
+    });
+
     const mailData: AppointmentRescheduledMailData = {
       clientName: this._getClientName(appointment),
       employeeName: this._getEmployeeName(appointment),
@@ -614,6 +663,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     appointment.deleted = true;
     await this.appointmentRepository.save(appointment);
+
+    await this._audit('deleted', uuid);
 
     return ResponseHelper.deleted('Wizyta została usunięta');
   }
@@ -793,6 +844,19 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       return `${appointment.userService.user.firstName} ${appointment.userService.user.lastName}`;
     }
     return 'Pracownik';
+  }
+
+  private _audit(
+    action: string,
+    appointmentUuid: string,
+    entry: Pick<AuditLogEntry, 'metadata' | 'guestLabel'> = {},
+  ): Promise<void> {
+    return this.auditLogService.record({
+      action: `appointment.${action}`,
+      entityType: 'appointment',
+      entityId: appointmentUuid,
+      ...entry,
+    });
   }
 
   private _sendMailSafe(fn: () => Promise<void>): void {

@@ -7,6 +7,7 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from '@/common/filters/http-exception.filter';
+import { requestContextMiddleware } from '@/common/request-context/request-context';
 
 const envPath = path.resolve(process.cwd(), '.env');
 console.log('Ścieżka do pliku .env:', envPath);
@@ -25,6 +26,8 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: false,
     }),
   );
+
+  app.use(requestContextMiddleware);
 
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(

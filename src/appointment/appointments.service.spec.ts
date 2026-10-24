@@ -29,6 +29,7 @@ import { DataSource } from 'typeorm';
 import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
 import { BookingAccessService } from '@/booking-access/booking-access.service';
 import { ConfigService } from '@nestjs/config';
+import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
 import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
 
@@ -183,6 +184,11 @@ describe('AppointmentsService', () => {
 
   const bookingAccessService = { createManageUrl: jest.fn() };
 
+  const auditLogService = { record: jest.fn() };
+
+  const auditActions = () =>
+    auditLogService.record.mock.calls.map(([entry]) => entry.action);
+
   const flushMails = () => new Promise(resolve => setImmediate(resolve));
 
   beforeEach(async () => {
@@ -221,6 +227,7 @@ describe('AppointmentsService', () => {
         { provide: DataSource, useValue: dataSource },
         { provide: SALON_SERVICE, useValue: salonService },
         { provide: BookingAccessService, useValue: bookingAccessService },
+        { provide: AuditLogService, useValue: auditLogService },
         {
           provide: ConfigService,
           useValue: {
@@ -1515,6 +1522,110 @@ describe('AppointmentsService', () => {
           { bookedByClient: true },
         ),
       ).rejects.toBeInstanceOf(AppointmentLeadTimeException);
+    });
+  });
+
+  describe('audit log', () => {
+    beforeEach(() => {
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue({ uuid: 'calendar-uuid' });
+    });
+
+    it('records created client appointment with guest label', async () => {
+      await service.create(
+        {
+          userServiceId: 'user-service-uuid',
+          scheduledAt: '2026-11-02T10:00:00.000Z',
+          clientEmail: 'jan@example.com',
+        },
+        { bookedByClient: true },
+      );
+
+      expect(auditLogService.record).toHaveBeenCalledWith({
+        action: 'appointment.created',
+        entityType: 'appointment',
+        entityId: 'new-appointment-uuid',
+        metadata: {
+          type: AppointmentType.CLIENT,
+          status: AppointmentStatus.PENDING,
+          bookedByClient: true,
+        },
+        guestLabel: 'jan@example.com',
+      });
+    });
+
+    it('does not record failed operations', async () => {
+      conflictQueryBuilder.getOne.mockResolvedValue({ uuid: 'other' });
+
+      await expect(
+        service.create({
+          userServiceId: 'user-service-uuid',
+          scheduledAt: '2026-11-02T10:00:00.000Z',
+          clientEmail: 'jan@example.com',
+        }),
+      ).rejects.toBeInstanceOf(AppointmentConflictException);
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('records cancellation with reason', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.cancel('appointment-uuid', {
+        cancelledBy: CancelledBy.CLIENT,
+        cancellationReason: 'Zmiana planów',
+      });
+
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'appointment.cancelled',
+          entityId: 'appointment-uuid',
+          metadata: {
+            cancelledBy: CancelledBy.CLIENT,
+            reason: 'Zmiana planów',
+          },
+        }),
+      );
+    });
+
+    it('records confirmation as its own action', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.update('appointment-uuid', {
+        status: AppointmentStatus.CONFIRMED,
+      });
+
+      expect(auditActions()).toEqual(['appointment.confirmed']);
+      expect(auditLogService.record.mock.calls[0][0].metadata).toEqual({
+        fields: ['status'],
+      });
+    });
+
+    it('records other changes as update with changed field names', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.update('appointment-uuid', { note: 'Nowa notatka' });
+
+      expect(auditActions()).toEqual(['appointment.updated']);
+      expect(auditLogService.record.mock.calls[0][0].metadata).toEqual({
+        fields: ['note'],
+      });
+    });
+
+    it('records reschedule and delete', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      await service.reschedule('appointment-uuid', {
+        scheduledAt: '2026-11-03T10:00:00.000Z',
+        scheduledEndAt: '2026-11-03T11:00:00.000Z',
+        rescheduledBy: RescheduledBy.STAFF,
+      });
+
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      await service.remove('appointment-uuid');
+
+      expect(auditActions()).toEqual([
+        'appointment.rescheduled',
+        'appointment.deleted',
+      ]);
     });
   });
 

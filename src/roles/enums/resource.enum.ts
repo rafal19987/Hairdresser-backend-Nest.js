@@ -5,4 +5,5 @@ export enum Resource {
   CALENDAR = 'calendar',
   CLIENTS = 'clients',
   SETTINGS = 'settings',
+  AUDIT_LOGS = 'audit-logs',
 }
