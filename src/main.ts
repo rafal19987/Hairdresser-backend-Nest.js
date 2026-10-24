@@ -6,7 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import {GlobalExceptionFilter} from "@/common/filters/http-exception.filter";
+import { GlobalExceptionFilter } from '@/common/filters/http-exception.filter';
 
 const envPath = path.resolve(process.cwd(), '.env');
 console.log('Ścieżka do pliku .env:', envPath);
@@ -26,7 +26,7 @@ async function bootstrap() {
     }),
   );
 
-    app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -39,7 +39,7 @@ async function bootstrap() {
   app.enableCors({
     origin:
       nodeEnv === 'production'
-        ? ['https://your-production-domain.com']
+        ? configService.get('APP_URL')
         : 'http://localhost:4200',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
