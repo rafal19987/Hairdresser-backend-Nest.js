@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -15,14 +15,20 @@ import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.e
 import { ClientAlreadyExistsException } from '@/clients/exceptions/client-already-exists.exception';
 import { ClientVerificationTokenExpiredException } from '@/clients/exceptions/client-verification-token-expired.exception';
 import { MailService } from '@/mail/mail.service';
+import { Appointment } from '@/appointment/entities/appointment.entity';
+import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 
 export const EMAIL_VERIFICATION_TTL_HOURS = 24;
 
 @Injectable()
 export class ClientsService implements ClientsServiceInterface {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(
     @InjectRepository(Client)
     private readonly clientRepository: Repository<Client>,
+    @InjectRepository(Appointment)
+    private readonly appointmentRepository: Repository<Appointment>,
     private readonly mailService: MailService,
   ) {}
 
@@ -87,10 +93,18 @@ export class ClientsService implements ClientsServiceInterface {
       emailVerified: false,
     });
 
-    await this.mailService.sendClientEmailVerification(
-      client.email,
-      emailVerificationToken,
-    );
+    // The account already exists, so a mail failure must not fail the registration
+    try {
+      await this.mailService.sendClientEmailVerification(
+        client.email,
+        emailVerificationToken,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not send verification email to ${client.email}`,
+        error,
+      );
+    }
 
     const { password, emailVerificationToken: token, ...result } = client;
 
@@ -172,8 +186,12 @@ export class ClientsService implements ClientsServiceInterface {
 
     await this.clientRepository.save(client);
 
+    const linkedAppointments = await this._linkGuestAppointments(client);
+
     return ResponseHelper.success(
       'Email został zweryfikowany. Możesz się teraz zalogować.',
+      HttpStatus.OK,
+      { linkedAppointments },
     );
   }
 
@@ -206,5 +224,21 @@ export class ClientsService implements ClientsServiceInterface {
       .addSelect('client.password')
       .where('client.email = :email', { email })
       .getOne();
+  }
+
+  // Runs only after the email is verified, so nobody can claim someone else's bookings
+  private async _linkGuestAppointments(client: Client): Promise<number> {
+    const result = await this.appointmentRepository
+      .createQueryBuilder()
+      .update(Appointment)
+      .set({ client: { uuid: client.uuid } })
+      .where('client_id IS NULL')
+      .andWhere('LOWER(clientEmail) = :email', {
+        email: client.email.toLowerCase(),
+      })
+      .andWhere('type = :type', { type: AppointmentType.CLIENT })
+      .execute();
+
+    return result.affected ?? 0;
   }
 }
