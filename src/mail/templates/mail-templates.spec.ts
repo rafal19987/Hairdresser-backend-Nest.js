@@ -51,4 +51,30 @@ describe('MailTemplates', () => {
 
     expect(html).not.toContain('Powód');
   });
+
+  it('escapes user-provided values', () => {
+    const { html } = MailTemplates.appointmentCreatedToEmployee({
+      ...mailData,
+      clientName: '<b>Jan</b>',
+      note: '<a href="https://evil.example">Kliknij</a>',
+    });
+
+    expect(html).not.toContain('<a href');
+    expect(html).not.toContain('<b>Jan</b>');
+    expect(html).toContain('&lt;b&gt;Jan&lt;&#x2F;b&gt;');
+    expect(html).toContain(
+      '&lt;a href=&quot;https:&#x2F;&#x2F;evil.example&quot;&gt;',
+    );
+  });
+
+  it('escapes reasons in cancellation mail', () => {
+    const { html } = MailTemplates.appointmentCancelledToClient({
+      ...mailData,
+      cancelledBy: 'staff',
+      cancellationReason: '<script>alert(1)</script>',
+    });
+
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
 });
