@@ -60,7 +60,7 @@ export function ApiCreateAppointment() {
     ApiResponse({
       status: 400,
       description:
-        'Nieprawidłowe dane, termin w przeszłości, brak e-maila klienta lub usługa, pracownik albo kalendarz niedostępny',
+        'Nieprawidłowe dane, termin w przeszłości lub poza godzinami otwarcia salonu, brak e-maila klienta lub usługa, pracownik albo kalendarz niedostępny',
     }),
     ApiResponse({
       status: 404,
@@ -96,7 +96,8 @@ export function ApiUpdateAppointment() {
     ApiResponse({ status: 200, description: 'Wizyta zaktualizowana' }),
     ApiResponse({
       status: 400,
-      description: 'Nieprawidłowy status lub zakres dat',
+      description:
+        'Nieprawidłowy status, zakres dat lub termin wizyty klienta poza godzinami otwarcia salonu',
     }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
     ApiResponse({
@@ -127,6 +128,11 @@ export function ApiRescheduleAppointment() {
     UuidParam('Appointment UUID'),
     ApiBody({ type: RescheduleAppointmentDto }),
     ApiResponse({ status: 200, description: 'Wizyta przełożona' }),
+    ApiResponse({
+      status: 400,
+      description:
+        'Nieprawidłowy zakres dat lub termin wizyty klienta poza godzinami otwarcia salonu',
+    }),
     ApiResponse({ status: 404, description: 'Wizyta nie znaleziona' }),
     ApiResponse({
       status: 409,

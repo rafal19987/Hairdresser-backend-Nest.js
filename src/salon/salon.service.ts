@@ -24,6 +24,9 @@ import {
 import {
   findTimeRangeError,
   formatLocalDate,
+  isoDayOfWeek,
+  sortTimeRanges,
+  TimeRange,
 } from '@/salon/helpers/time.helper';
 
 const DAY_NAMES = [
@@ -165,6 +168,32 @@ export class SalonService implements SalonServiceInterface {
     await this.specialDayRepository.remove(specialDay);
 
     return ResponseHelper.deleted('Special day deleted');
+  }
+
+  public getBookingSettings(): Promise<Salon> {
+    return this._getSalon();
+  }
+
+  // Special day overrides the weekly schedule; date is in the salon time zone
+  public async findOpeningRanges(
+    salon: Salon,
+    date: string,
+  ): Promise<TimeRange[]> {
+    const specialDay = await this.specialDayRepository.findOne({
+      where: { date, salon: { uuid: salon.uuid } },
+      relations: { hours: true },
+    });
+
+    const ranges: TimeRange[] = specialDay
+      ? specialDay.hours
+      : await this.openingHoursRepository.find({
+          where: { salon: { uuid: salon.uuid }, dayOfWeek: isoDayOfWeek(date) },
+        });
+
+    return sortTimeRanges(ranges).map(({ opensAt, closesAt }) => ({
+      opensAt,
+      closesAt,
+    }));
   }
 
   // Single-location setup: the oldest salon record is the salon

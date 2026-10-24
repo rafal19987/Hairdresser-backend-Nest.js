@@ -26,6 +26,9 @@ import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.e
 import { UserServiceNotFoundException } from '@/users-services/exceptions/users-services-not-found.exception';
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 import { DataSource } from 'typeorm';
+import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
+import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
+import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
 
 const NOW = new Date('2026-11-01T08:00:00.000Z');
 
@@ -164,9 +167,25 @@ describe('AppointmentsService', () => {
       .mockResolvedValue(undefined),
   };
 
+  const salon = {
+    uuid: 'salon-uuid',
+    timeZone: 'Europe/Warsaw',
+    clientMinLeadTimeMinutes: 60,
+    maxBookingDaysAhead: 60,
+  };
+
+  const salonService = {
+    getBookingSettings: jest.fn(),
+    findOpeningRanges: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
+    salonService.getBookingSettings.mockResolvedValue(salon);
+    salonService.findOpeningRanges.mockResolvedValue([
+      { opensAt: '00:00', closesAt: '23:59' },
+    ]);
     conflictQueryBuilder.getOne.mockResolvedValue(null);
     conflictQueryBuilder.getMany.mockResolvedValue([]);
     appointmentRepository.save.mockImplementation(async entity => entity);
@@ -191,6 +210,7 @@ describe('AppointmentsService', () => {
         },
         { provide: MailService, useValue: mailService },
         { provide: DataSource, useValue: dataSource },
+        { provide: SALON_SERVICE, useValue: salonService },
       ],
     }).compile();
 
@@ -1080,6 +1100,201 @@ describe('AppointmentsService', () => {
       expect(appointmentRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ rescheduleReason: null }),
       );
+    });
+  });
+
+  describe('opening hours and booking rules', () => {
+    const dto = {
+      userServiceId: 'user-service-uuid',
+      scheduledAt: '2026-11-02T10:00:00.000Z',
+      clientEmail: 'jan@example.com',
+    };
+
+    const lunchBreakDay = [
+      { opensAt: '09:00', closesAt: '13:00' },
+      { opensAt: '14:00', closesAt: '18:00' },
+    ];
+
+    const wholeDay = [{ opensAt: '00:00', closesAt: '23:59' }];
+
+    beforeEach(() => {
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue({ uuid: 'calendar-uuid' });
+      salonService.findOpeningRanges.mockResolvedValue(lunchBreakDay);
+    });
+
+    it('accepts appointment within opening range in salon time', async () => {
+      // 10:00 UTC is 11:00 in Warsaw in November
+      await service.create(dto);
+
+      expect(salonService.findOpeningRanges).toHaveBeenCalledWith(
+        salon,
+        '2026-11-02',
+      );
+      expect(appointmentRepository.save).toHaveBeenCalled();
+    });
+
+    it('accepts appointment ending exactly at closing time', async () => {
+      await service.create({ ...dto, scheduledAt: '2026-11-02T16:00:00.000Z' });
+
+      expect(appointmentRepository.save).toHaveBeenCalled();
+    });
+
+    it('rejects appointment during lunch break', async () => {
+      await expect(
+        service.create({ ...dto, scheduledAt: '2026-11-02T11:30:00.000Z' }),
+      ).rejects.toThrow(
+        'Wizyta musi mieścić się w godzinach otwarcia salonu w dniu 2026-11-02: 09:00-13:00, 14:00-18:00',
+      );
+      expect(appointmentRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects appointment ending after closing time', async () => {
+      await expect(
+        service.create({ ...dto, scheduledAt: '2026-11-02T16:30:00.000Z' }),
+      ).rejects.toBeInstanceOf(AppointmentOutsideOpeningHoursException);
+    });
+
+    it('rejects appointment on closed day', async () => {
+      salonService.findOpeningRanges.mockResolvedValue([]);
+
+      await expect(service.create(dto)).rejects.toThrow(
+        'Salon jest zamknięty w dniu 2026-11-02',
+      );
+    });
+
+    it('uses salon local date near midnight', async () => {
+      salonService.findOpeningRanges.mockResolvedValue([]);
+
+      // 23:30 UTC on Nov 2 is already Nov 3 in Warsaw
+      await expect(
+        service.create({ ...dto, scheduledAt: '2026-11-02T23:30:00.000Z' }),
+      ).rejects.toBeInstanceOf(AppointmentOutsideOpeningHoursException);
+      expect(salonService.findOpeningRanges).toHaveBeenCalledWith(
+        salon,
+        '2026-11-03',
+      );
+    });
+
+    it('applies daylight saving time offset', async () => {
+      salonService.findOpeningRanges.mockResolvedValue([
+        { opensAt: '09:00', closesAt: '18:00' },
+      ]);
+
+      // 07:00 UTC is 09:00 in Warsaw in summer
+      await service.create({ ...dto, scheduledAt: '2027-07-01T07:00:00.000Z' });
+
+      expect(appointmentRepository.save).toHaveBeenCalled();
+    });
+
+    it('applies opening hours to staff bookings', async () => {
+      await expect(
+        service.create(
+          { ...dto, scheduledAt: '2026-11-02T06:00:00.000Z' },
+          { createdByUuid: 'receptionist-uuid' },
+        ),
+      ).rejects.toBeInstanceOf(AppointmentOutsideOpeningHoursException);
+    });
+
+    it('does not check opening hours for internal events', async () => {
+      userRepository.findOneBy.mockResolvedValue({ uuid: 'employee-uuid' });
+      calendarRepository.findOne.mockResolvedValue({
+        uuid: 'calendar-uuid',
+        owner: { uuid: 'employee-uuid' },
+      });
+
+      await service.createInternal({
+        calendarId: 'calendar-uuid',
+        ownerId: 'employee-uuid',
+        name: 'Inwentaryzacja',
+        scheduledAt: '2026-11-02T20:00:00.000Z',
+        scheduledEndAt: '2026-11-02T22:00:00.000Z',
+      });
+
+      expect(salonService.findOpeningRanges).not.toHaveBeenCalled();
+      expect(appointmentRepository.save).toHaveBeenCalled();
+    });
+
+    it('checks opening hours when client appointment dates change', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await expect(
+        service.update('appointment-uuid', {
+          scheduledAt: '2026-11-02T18:00:00.000Z',
+          scheduledEndAt: '2026-11-02T19:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(AppointmentOutsideOpeningHoursException);
+    });
+
+    it('does not check opening hours when only note changes', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.update('appointment-uuid', { note: 'Nowa notatka' });
+
+      expect(salonService.findOpeningRanges).not.toHaveBeenCalled();
+    });
+
+    it('does not check opening hours when internal event moves', async () => {
+      appointmentRepository.findOne.mockResolvedValue(
+        createAppointment({ type: AppointmentType.INTERNAL }),
+      );
+
+      await service.update('appointment-uuid', {
+        scheduledAt: '2026-11-02T20:00:00.000Z',
+        scheduledEndAt: '2026-11-02T21:00:00.000Z',
+      });
+
+      expect(salonService.findOpeningRanges).not.toHaveBeenCalled();
+    });
+
+    it('checks opening hours when client appointment is rescheduled', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await expect(
+        service.reschedule('appointment-uuid', {
+          scheduledAt: '2026-11-03T05:00:00.000Z',
+          scheduledEndAt: '2026-11-03T06:00:00.000Z',
+          rescheduledBy: RescheduledBy.STAFF,
+        }),
+      ).rejects.toBeInstanceOf(AppointmentOutsideOpeningHoursException);
+      expect(appointmentRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('uses lead time from salon settings', async () => {
+      salonService.getBookingSettings.mockResolvedValue({
+        ...salon,
+        clientMinLeadTimeMinutes: 180,
+      });
+      salonService.findOpeningRanges.mockResolvedValue(wholeDay);
+      const in2Hours = new Date(NOW.getTime() + 120 * 60 * 1000);
+
+      await expect(
+        service.create(
+          { ...dto, scheduledAt: in2Hours.toISOString() },
+          { bookedByClient: true },
+        ),
+      ).rejects.toThrow('najpóźniej 180 minut');
+    });
+
+    it('rejects client booking beyond booking horizon', async () => {
+      salonService.findOpeningRanges.mockResolvedValue(wholeDay);
+      const in61Days = new Date(NOW.getTime() + 61 * 24 * 60 * 60 * 1000);
+
+      await expect(
+        service.create(
+          { ...dto, scheduledAt: in61Days.toISOString() },
+          { bookedByClient: true },
+        ),
+      ).rejects.toBeInstanceOf(AppointmentBeyondBookingHorizonException);
+    });
+
+    it('allows staff to book beyond booking horizon', async () => {
+      salonService.findOpeningRanges.mockResolvedValue(wholeDay);
+      const in61Days = new Date(NOW.getTime() + 61 * 24 * 60 * 60 * 1000);
+
+      await service.create({ ...dto, scheduledAt: in61Days.toISOString() });
+
+      expect(appointmentRepository.save).toHaveBeenCalled();
     });
   });
 

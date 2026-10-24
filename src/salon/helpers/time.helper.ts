@@ -42,3 +42,35 @@ export const findTimeRangeError = (ranges: TimeRange[]): string | null => {
 
 export const formatLocalDate = (date: Date, timeZone: string): string =>
   new Intl.DateTimeFormat('en-CA', { timeZone }).format(date);
+
+export interface LocalDateTime {
+  date: string;
+  minutes: number;
+}
+
+export const toLocalDateTime = (
+  date: Date,
+  timeZone: string,
+): LocalDateTime => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(date)
+      .map(({ type, value }) => [type, value]),
+  );
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute),
+  };
+};
+
+export const isoDayOfWeek = (date: string): number =>
+  new Date(`${date}T00:00:00.000Z`).getUTCDay() || 7;

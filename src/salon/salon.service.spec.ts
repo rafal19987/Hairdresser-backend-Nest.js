@@ -346,6 +346,48 @@ describe('SalonService', () => {
     });
   });
 
+  describe('findOpeningRanges', () => {
+    it('returns weekly ranges for ISO day of week', async () => {
+      specialDayRepository.findOne.mockResolvedValue(null);
+      openingHoursRepository.find.mockResolvedValue([
+        { dayOfWeek: 7, opensAt: '14:00', closesAt: '18:00', uuid: 'b' },
+        { dayOfWeek: 7, opensAt: '09:00', closesAt: '13:00', uuid: 'a' },
+      ]);
+
+      // 2026-11-08 is a Sunday
+      const ranges = await service.findOpeningRanges(salon, '2026-11-08');
+
+      expect(openingHoursRepository.find).toHaveBeenCalledWith({
+        where: { salon: { uuid: 'salon-uuid' }, dayOfWeek: 7 },
+      });
+      expect(ranges).toEqual([
+        { opensAt: '09:00', closesAt: '13:00' },
+        { opensAt: '14:00', closesAt: '18:00' },
+      ]);
+    });
+
+    it('uses special day hours instead of weekly schedule', async () => {
+      specialDayRepository.findOne.mockResolvedValue({
+        isClosed: false,
+        hours: [{ opensAt: '09:00', closesAt: '13:00' }],
+      });
+
+      const ranges = await service.findOpeningRanges(salon, '2026-12-24');
+
+      expect(ranges).toEqual([{ opensAt: '09:00', closesAt: '13:00' }]);
+      expect(openingHoursRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('returns no ranges for closed special day', async () => {
+      specialDayRepository.findOne.mockResolvedValue({
+        isClosed: true,
+        hours: [],
+      });
+
+      expect(await service.findOpeningRanges(salon, '2026-12-25')).toEqual([]);
+    });
+  });
+
   describe('removeSpecialDay', () => {
     it('removes special day of the salon', async () => {
       const specialDay = { uuid: 'day-uuid' };

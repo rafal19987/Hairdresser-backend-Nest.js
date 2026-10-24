@@ -1,7 +1,9 @@
 import {
   findTimeRangeError,
   formatLocalDate,
+  isoDayOfWeek,
   timeColumnTransformer,
+  toLocalDateTime,
   toMinutes,
 } from '@/salon/helpers/time.helper';
 
@@ -60,5 +62,26 @@ describe('time helper', () => {
 
     expect(formatLocalDate(lateEveningUtc, 'UTC')).toBe('2026-12-31');
     expect(formatLocalDate(lateEveningUtc, 'Europe/Warsaw')).toBe('2027-01-01');
+  });
+
+  it('converts UTC date to salon local date and minutes', () => {
+    expect(
+      toLocalDateTime(new Date('2026-11-02T10:15:00.000Z'), 'Europe/Warsaw'),
+    ).toEqual({ date: '2026-11-02', minutes: 11 * 60 + 15 });
+    expect(
+      toLocalDateTime(new Date('2026-07-01T22:30:00.000Z'), 'Europe/Warsaw'),
+    ).toEqual({ date: '2026-07-02', minutes: 30 });
+  });
+
+  it('returns midnight as zero minutes', () => {
+    expect(
+      toLocalDateTime(new Date('2026-11-01T23:00:00.000Z'), 'Europe/Warsaw')
+        .minutes,
+    ).toBe(0);
+  });
+
+  it('returns ISO day of week', () => {
+    expect(isoDayOfWeek('2026-11-02')).toBe(1);
+    expect(isoDayOfWeek('2026-11-08')).toBe(7);
   });
 });
