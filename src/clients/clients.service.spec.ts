@@ -6,6 +6,7 @@ import {
 } from './clients.service';
 import { Client } from '@/clients/entities/client.entity';
 import { MailService } from '@/mail/mail.service';
+import { Appointment } from '@/appointment/entities/appointment.entity';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
 import { ClientVerificationTokenExpiredException } from '@/clients/exceptions/client-verification-token-expired.exception';
 
@@ -14,7 +15,20 @@ describe('ClientsService', () => {
 
   const clientRepository = {
     findOneBy: jest.fn(),
+    findOne: jest.fn(),
     save: jest.fn(),
+  };
+
+  const linkQueryBuilder = {
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    execute: jest.fn(),
+  };
+
+  const appointmentRepository = {
+    createQueryBuilder: jest.fn(() => linkQueryBuilder),
   };
 
   const mailService = {
@@ -23,12 +37,17 @@ describe('ClientsService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    linkQueryBuilder.execute.mockResolvedValue({ affected: 0 });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClientsService,
         { provide: getRepositoryToken(Client), useValue: clientRepository },
         { provide: MailService, useValue: mailService },
+        {
+          provide: getRepositoryToken(Appointment),
+          useValue: appointmentRepository,
+        },
       ],
     }).compile();
 
@@ -61,6 +80,7 @@ describe('ClientsService', () => {
 
     it('activates client when token is valid', async () => {
       const client = {
+        email: 'jan@example.com',
         emailVerificationToken: 'token',
         emailVerificationDate: new Date(),
         emailVerified: false,
@@ -128,6 +148,59 @@ describe('ClientsService', () => {
         'jan@example.com',
         client.emailVerificationToken,
       );
+    });
+  });
+
+  describe('guest appointments', () => {
+    it('links guest appointments with the same email after verification', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        email: 'Jan@Example.com',
+        emailVerificationToken: 'token',
+        emailVerificationDate: new Date(),
+      });
+      linkQueryBuilder.execute.mockResolvedValue({ affected: 2 });
+
+      const result = await service.verifyEmail('token');
+
+      expect(linkQueryBuilder.set).toHaveBeenCalledWith({
+        client: { uuid: 'client-uuid' },
+      });
+      expect(linkQueryBuilder.where).toHaveBeenCalledWith('client_id IS NULL');
+      expect(linkQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'LOWER(clientEmail) = :email',
+        { email: 'jan@example.com' },
+      );
+      expect(result.data).toEqual({ linkedAppointments: 2 });
+    });
+
+    it('does not link anything when verification fails', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.verifyEmail('token')).rejects.toBeDefined();
+      expect(linkQueryBuilder.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create', () => {
+    it('creates account even when verification email fails', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+      clientRepository.findOne.mockResolvedValue(null);
+      clientRepository.save.mockImplementation(async client => ({
+        uuid: 'client-uuid',
+        ...client,
+      }));
+      mailService.sendClientEmailVerification.mockRejectedValue(
+        new Error('SMTP'),
+      );
+
+      const result = await service.create({
+        email: 'jan@example.com',
+        password: 'Haslo1234!',
+      });
+
+      expect(result.statusCode).toBe(201);
+      expect(result.data).not.toHaveProperty('password');
     });
   });
 });

@@ -8,6 +8,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StringValue } from 'ms';
 import { AuthClientService } from '@/auth-client/auth-client.service';
 import { AuthClientController } from '@/auth-client/auth-client.controller';
+import { getClientAccessTokenSecret } from '@/auth-client/constants';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { AuthClientController } from '@/auth-client/auth-client.controller';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_CLIENT_ACCESS_TOKEN_SECRET_KEY'),
+        secret: getClientAccessTokenSecret(configService),
         signOptions: {
           expiresIn: configService.get<StringValue>(
             'JWT_ACCESS_TOKEN_EXPIRES_IN',

@@ -12,6 +12,10 @@ import { InvalidRefreshTokenException } from '@/auth/exceptions/invalid-refresh-
 import { ClientEmailNotVerifiedException } from '@/clients/exceptions/client-email-not-verified.exception';
 import { StringValue } from 'ms';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
+import {
+  CLIENT_TOKEN_TYPE,
+  getClientAccessTokenSecret,
+} from '@/auth-client/constants';
 
 export const CLIENT_REFRESH_TOKEN_TTL_DAYS = 7;
 
@@ -96,11 +100,9 @@ export class AuthClientService {
     clientId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const accessToken = this.jwtService.sign(
-      { clientId, type: 'client' },
+      { clientId, type: CLIENT_TOKEN_TYPE },
       {
-        secret: this.configService.get<string>(
-          'JWT_CLIENT_ACCESS_TOKEN_SECRET_KEY',
-        ),
+        secret: getClientAccessTokenSecret(this.configService),
         expiresIn: this.configService.get<StringValue>(
           'JWT_ACCESS_TOKEN_EXPIRES_IN',
         ),

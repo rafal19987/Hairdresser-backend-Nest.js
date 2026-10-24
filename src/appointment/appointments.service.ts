@@ -1,4 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Appointment } from './entities/appointment.entity';
@@ -19,6 +20,7 @@ import { createPaginatedResponse } from '@/common/helpers/pagination.helper';
 import {
   AppointmentsServiceInterface,
   CreateAppointmentOptions,
+  RescheduleAppointmentOptions,
 } from '@/appointment/interfaces/appointments-service.interface';
 import { AppointmentNotFoundException } from '@/appointment/exceptions/appointment-not-found.exception';
 import { AppointmentAlreadyCancelledException } from '@/appointment/exceptions/appointment-already-cancelled.exception';
@@ -54,6 +56,7 @@ import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-fo
 import { UserNotFoundException } from '@/users/exceptions/user-not-found.exception';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { MailService } from '@/mail/mail.service';
+import { BookingAccessService } from '@/booking-access/booking-access.service';
 import {
   AppointmentMailData,
   AppointmentCancelledMailData,
@@ -82,6 +85,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     private readonly dataSource: DataSource,
     @Inject(SALON_SERVICE)
     private readonly salonService: SalonServiceInterface,
+    private readonly bookingAccessService: BookingAccessService,
+    private readonly configService: ConfigService,
   ) {}
 
   public async findAll(
@@ -222,7 +227,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       scheduledAt.getTime() + userService.duration * MINUTE_MS,
     );
 
-    await this._assertClientBookable(
+    const salon = await this._assertClientBookable(
       scheduledAt,
       scheduledEndAt,
       options.bookedByClient,
@@ -230,9 +235,14 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientPhone =
       client?.phone ?? createAppointmentDto.clientPhone ?? null;
+    const guestName = client ? null : (createAppointmentDto.clientName ?? null);
     const clientName = client
       ? `${client.firstName} ${client.lastName}`
-      : (clientEmail ?? 'Klient');
+      : (guestName ?? clientEmail);
+    const status =
+      options.bookedByClient && salon.autoConfirmClientBookings
+        ? AppointmentStatus.CONFIRMED
+        : AppointmentStatus.PENDING;
 
     const name = `${userService.service.name} — ${userService.user.firstName} ${userService.user.lastName}`;
 
@@ -243,9 +253,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       userService,
       price: userService.price,
       duration: userService.duration,
-      status: AppointmentStatus.PENDING,
+      status,
       type: AppointmentType.CLIENT,
       note: createAppointmentDto.note,
+      clientName: guestName,
       clientEmail,
       clientPhone,
       scheduledAt,
@@ -265,8 +276,14 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       note: createAppointmentDto.note,
     };
 
-    this._sendMailSafe(() =>
-      this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
+    this._sendClientMailSafe(
+      clientEmail,
+      mailData,
+      (email, data) =>
+        status === AppointmentStatus.CONFIRMED
+          ? this.mailService.sendAppointmentConfirmedToClient(email, data)
+          : this.mailService.sendAppointmentCreatedToClient(email, data),
+      Boolean(client),
     );
 
     this._sendMailSafe(() =>
@@ -278,6 +295,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     return ResponseHelper.created('Wizyta została utworzona', {
       uuid: appointment.uuid,
+      status,
       overlaps: await this._findOverlapsFor(appointment),
     });
   }
@@ -480,11 +498,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentCancelledToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentCancelledToClient(email, data),
+        Boolean(appointment.client),
       );
     }
 
@@ -503,6 +522,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   public async reschedule(
     uuid: string,
     dto: RescheduleAppointmentDto,
+    options: RescheduleAppointmentOptions = {},
   ): Promise<ResponseDto> {
     const appointment = await this._findNotDeleted(uuid, [
       'calendar',
@@ -525,7 +545,11 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     this._assertNotInPast(scheduledAt);
 
     if (appointment.type === AppointmentType.CLIENT) {
-      await this._assertClientBookable(scheduledAt, scheduledEndAt);
+      await this._assertClientBookable(
+        scheduledAt,
+        scheduledEndAt,
+        options.bookedByClient,
+      );
     }
 
     const previousScheduledAt = appointment.scheduledAt;
@@ -564,11 +588,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentRescheduledToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentRescheduledToClient(email, data),
+        Boolean(appointment.client),
       );
     }
 
@@ -631,12 +656,14 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     scheduledAt: Date,
     scheduledEndAt: Date,
     bookedByClient = false,
-  ): Promise<void> {
+  ): Promise<Salon> {
     const salon = await this.salonService.getBookingSettings();
 
     if (bookedByClient) this._assertWithinBookingWindow(salon, scheduledAt);
 
     await this._assertWithinOpeningHours(salon, scheduledAt, scheduledEndAt);
+
+    return salon;
   }
 
   private _assertWithinBookingWindow(salon: Salon, scheduledAt: Date): void {
@@ -744,11 +771,12 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const clientEmail =
       fullAppointment.client?.email ?? fullAppointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentConfirmedToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(
+        clientEmail,
+        mailData,
+        (email, data) =>
+          this.mailService.sendAppointmentConfirmedToClient(email, data),
+        Boolean(fullAppointment.client),
       );
     }
   }
@@ -757,7 +785,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     if (appointment.client?.firstName) {
       return `${appointment.client.firstName} ${appointment.client.lastName}`;
     }
-    return appointment.clientEmail ?? 'Klient';
+    return appointment.clientName ?? appointment.clientEmail ?? 'Klient';
   }
 
   private _getEmployeeName(appointment: Appointment): string {
@@ -770,6 +798,26 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   private _sendMailSafe(fn: () => Promise<void>): void {
     fn().catch(error => {
       this.logger.error('Błąd wysyłania maila', error);
+    });
+  }
+
+  private _sendClientMailSafe<T extends AppointmentMailData>(
+    email: string,
+    mailData: T,
+    send: (email: string, data: T) => Promise<void>,
+    hasAccount = false,
+  ): void {
+    this._sendMailSafe(async () => {
+      const manageUrl = await this.bookingAccessService.createManageUrl(email);
+      const accountUrl = hasAccount
+        ? this.configService.get<string>('CLIENT_ACCOUNT_URL')
+        : undefined;
+
+      await send(email, {
+        ...mailData,
+        manageUrl: manageUrl ?? undefined,
+        accountUrl: accountUrl || undefined,
+      });
     });
   }
 

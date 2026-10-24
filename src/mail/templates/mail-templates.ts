@@ -22,7 +22,28 @@ const footer = ({ salonName, email, phone }: MailBranding): string => {
     `;
 };
 
+const manageLinks = ({ manageUrl, accountUrl }: AppointmentMailData): string =>
+  [
+    manageUrl &&
+      `<p><a href="${escapeHtml(manageUrl)}">Zarządzaj swoimi wizytami</a> — tutaj sprawdzisz, przełożysz lub anulujesz wizytę.</p>`,
+    accountUrl &&
+      `<p><a href="${escapeHtml(accountUrl)}">Przejdź do swojego konta</a></p>`,
+  ]
+    .filter(Boolean)
+    .join('');
+
 export const MailTemplates = {
+  bookingManageLink: (manageUrl: string, branding: MailBranding) => ({
+    subject: `Twoje wizyty — ${branding.salonName}`,
+    html: `
+      <h2>Twoje wizyty</h2>
+      <p>Poniższy link prowadzi do strony z Twoimi wizytami. Możesz tam sprawdzić historię oraz przełożyć lub anulować nadchodzące wizyty.</p>
+      <p><a href="${escapeHtml(manageUrl)}">Zobacz swoje wizyty</a></p>
+      <p>Jeśli nie prosiłeś o ten link, zignoruj tę wiadomość.</p>
+      ${footer(branding)}
+    `,
+  }),
+
   invitation: (link: string, branding: MailBranding) => ({
     subject: `Zaproszenie do systemu ${branding.salonName}`,
     html: `
@@ -65,6 +86,7 @@ export const MailTemplates = {
         ${data.note ? `<tr><td><strong>Notatka:</strong></td><td>${escapeHtml(data.note)}</td></tr>` : ''}
       </table>
       <p>O potwierdzeniu wizyty poinformujemy Cię osobnym mailem.</p>
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),
@@ -103,6 +125,7 @@ export const MailTemplates = {
         <tr><td><strong>Cena:</strong></td><td>${data.price} zł</td></tr>
       </table>
       <p>Do zobaczenia!</p>
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),
@@ -122,6 +145,7 @@ export const MailTemplates = {
         ${data.cancellationReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.cancellationReason)}</td></tr>` : ''}
       </table>
       <p>Jeśli chcesz umówić nową wizytę, zapraszamy na naszą stronę.</p>
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),
@@ -159,6 +183,7 @@ export const MailTemplates = {
         <tr><td><strong>Przełożono przez:</strong></td><td>${data.rescheduledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
         ${data.rescheduleReason ? `<tr><td><strong>Powód:</strong></td><td>${escapeHtml(data.rescheduleReason)}</td></tr>` : ''}
       </table>
+      ${manageLinks(data)}
       ${footer(branding)}
     `,
   }),

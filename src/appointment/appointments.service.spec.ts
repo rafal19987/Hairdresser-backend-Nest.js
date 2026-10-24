@@ -27,6 +27,8 @@ import { UserServiceNotFoundException } from '@/users-services/exceptions/users-
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 import { DataSource } from 'typeorm';
 import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
+import { BookingAccessService } from '@/booking-access/booking-access.service';
+import { ConfigService } from '@nestjs/config';
 import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
 import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
 
@@ -179,10 +181,17 @@ describe('AppointmentsService', () => {
     findOpeningRanges: jest.fn(),
   };
 
+  const bookingAccessService = { createManageUrl: jest.fn() };
+
+  const flushMails = () => new Promise(resolve => setImmediate(resolve));
+
   beforeEach(async () => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
     salonService.getBookingSettings.mockResolvedValue(salon);
+    bookingAccessService.createManageUrl.mockResolvedValue(
+      'https://reve.pl/moje-wizyty/token',
+    );
     salonService.findOpeningRanges.mockResolvedValue([
       { opensAt: '00:00', closesAt: '23:59' },
     ]);
@@ -211,6 +220,16 @@ describe('AppointmentsService', () => {
         { provide: MailService, useValue: mailService },
         { provide: DataSource, useValue: dataSource },
         { provide: SALON_SERVICE, useValue: salonService },
+        { provide: BookingAccessService, useValue: bookingAccessService },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              key === 'CLIENT_ACCOUNT_URL'
+                ? 'https://reve.pl/konto'
+                : undefined,
+          },
+        },
       ],
     }).compile();
 
@@ -1295,6 +1314,207 @@ describe('AppointmentsService', () => {
       await service.create({ ...dto, scheduledAt: in61Days.toISOString() });
 
       expect(appointmentRepository.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('client bookings', () => {
+    const dto = {
+      userServiceId: 'user-service-uuid',
+      scheduledAt: '2026-11-02T10:00:00.000Z',
+      clientEmail: 'jan@example.com',
+      clientName: 'Jan Kowalski',
+    };
+
+    beforeEach(() => {
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue({ uuid: 'calendar-uuid' });
+    });
+
+    it('stores guest name and uses it in mails', async () => {
+      await service.create(dto, { bookedByClient: true });
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ clientName: 'Jan Kowalski' }),
+      );
+      expect(mailService.sendAppointmentCreatedToEmployee).toHaveBeenCalledWith(
+        'anna@hairdresser.pl',
+        expect.objectContaining({ clientName: 'Jan Kowalski' }),
+      );
+    });
+
+    it('ignores guest name when booking is linked to client account', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        firstName: 'Ewa',
+        lastName: 'Nowak',
+        email: 'ewa@example.com',
+      });
+
+      await service.create(dto, {
+        clientUuid: 'client-uuid',
+        bookedByClient: true,
+      });
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientName: null,
+          clientEmail: 'ewa@example.com',
+        }),
+      );
+    });
+
+    it('keeps client booking pending without auto confirmation', async () => {
+      const result = await service.create(dto, { bookedByClient: true });
+
+      expect(result.data.status).toBe(AppointmentStatus.PENDING);
+      expect(mailService.sendAppointmentCreatedToClient).toHaveBeenCalled();
+      expect(
+        mailService.sendAppointmentConfirmedToClient,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('confirms client booking when salon auto confirms', async () => {
+      salonService.getBookingSettings.mockResolvedValue({
+        ...salon,
+        autoConfirmClientBookings: true,
+      });
+
+      const result = await service.create(dto, { bookedByClient: true });
+
+      expect(result.data.status).toBe(AppointmentStatus.CONFIRMED);
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: AppointmentStatus.CONFIRMED }),
+      );
+      expect(mailService.sendAppointmentConfirmedToClient).toHaveBeenCalledWith(
+        'jan@example.com',
+        expect.any(Object),
+      );
+      expect(mailService.sendAppointmentCreatedToClient).not.toHaveBeenCalled();
+    });
+
+    it('does not auto confirm bookings made by staff', async () => {
+      salonService.getBookingSettings.mockResolvedValue({
+        ...salon,
+        autoConfirmClientBookings: true,
+      });
+
+      const result = await service.create(dto);
+
+      expect(result.data.status).toBe(AppointmentStatus.PENDING);
+    });
+  });
+
+  describe('client mail manage link', () => {
+    beforeEach(() => {
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue({ uuid: 'calendar-uuid' });
+    });
+
+    it('adds manage link to client mail but not to employee mail', async () => {
+      await service.create({
+        userServiceId: 'user-service-uuid',
+        scheduledAt: '2026-11-02T10:00:00.000Z',
+        clientEmail: 'jan@example.com',
+      });
+      await flushMails();
+
+      expect(bookingAccessService.createManageUrl).toHaveBeenCalledWith(
+        'jan@example.com',
+      );
+      expect(mailService.sendAppointmentCreatedToClient).toHaveBeenCalledWith(
+        'jan@example.com',
+        expect.objectContaining({
+          manageUrl: 'https://reve.pl/moje-wizyty/token',
+        }),
+      );
+      expect(
+        mailService.sendAppointmentCreatedToEmployee.mock.calls[0][1],
+      ).not.toHaveProperty('manageUrl');
+    });
+
+    it('adds manage link to reschedule and cancel mails', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.reschedule('appointment-uuid', {
+        scheduledAt: '2026-11-03T10:00:00.000Z',
+        scheduledEndAt: '2026-11-03T11:00:00.000Z',
+        rescheduledBy: RescheduledBy.STAFF,
+      });
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      await service.cancel('appointment-uuid', {
+        cancelledBy: CancelledBy.STAFF,
+      });
+      await flushMails();
+
+      expect(
+        mailService.sendAppointmentRescheduledToClient.mock.calls[0][1]
+          .manageUrl,
+      ).toBe('https://reve.pl/moje-wizyty/token');
+      expect(
+        mailService.sendAppointmentCancelledToClient.mock.calls[0][1].manageUrl,
+      ).toBe('https://reve.pl/moje-wizyty/token');
+    });
+
+    it('adds account link only for appointments of client accounts', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        firstName: 'Ewa',
+        lastName: 'Nowak',
+        email: 'ewa@example.com',
+      });
+
+      await service.create(
+        {
+          userServiceId: 'user-service-uuid',
+          scheduledAt: '2026-11-02T10:00:00.000Z',
+        },
+        { clientUuid: 'client-uuid' },
+      );
+      await service.create({
+        userServiceId: 'user-service-uuid',
+        scheduledAt: '2026-11-03T10:00:00.000Z',
+        clientEmail: 'jan@example.com',
+      });
+      await flushMails();
+
+      const [accountMail, guestMail] =
+        mailService.sendAppointmentCreatedToClient.mock.calls;
+      expect(accountMail[1].accountUrl).toBe('https://reve.pl/konto');
+      expect(guestMail[1].accountUrl).toBeUndefined();
+    });
+
+    it('still sends client mail when link cannot be created', async () => {
+      bookingAccessService.createManageUrl.mockResolvedValue(null);
+
+      await service.create({
+        userServiceId: 'user-service-uuid',
+        scheduledAt: '2026-11-02T10:00:00.000Z',
+        clientEmail: 'jan@example.com',
+      });
+      await flushMails();
+
+      expect(
+        mailService.sendAppointmentCreatedToClient.mock.calls[0][1].manageUrl,
+      ).toBeUndefined();
+    });
+
+    it('applies client rules when client reschedules', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      const in30Minutes = new Date(NOW.getTime() + 30 * 60 * 1000);
+
+      await expect(
+        service.reschedule(
+          'appointment-uuid',
+          {
+            scheduledAt: in30Minutes.toISOString(),
+            scheduledEndAt: new Date(
+              in30Minutes.getTime() + 60 * 60 * 1000,
+            ).toISOString(),
+            rescheduledBy: RescheduledBy.CLIENT,
+          },
+          { bookedByClient: true },
+        ),
+      ).rejects.toBeInstanceOf(AppointmentLeadTimeException);
     });
   });
 

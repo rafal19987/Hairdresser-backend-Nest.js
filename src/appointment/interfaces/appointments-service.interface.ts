@@ -14,6 +14,10 @@ export interface CreateAppointmentOptions {
   createdByUuid?: string;
 }
 
+export interface RescheduleAppointmentOptions {
+  bookedByClient?: boolean;
+}
+
 export interface AppointmentsServiceInterface {
   findAll(
     paginationParams: PaginationParamsDto,
@@ -42,6 +46,7 @@ export interface AppointmentsServiceInterface {
   reschedule(
     uuid: string,
     rescheduleAppointmentDto: RescheduleAppointmentDto,
+    options?: RescheduleAppointmentOptions,
   ): Promise<ResponseDto>;
   remove(uuid: string): Promise<ResponseDto>;
 }

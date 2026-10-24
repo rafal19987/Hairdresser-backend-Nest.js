@@ -1,10 +1,14 @@
 import {
+  Body,
   Controller,
   Get,
   Inject,
   Param,
   ParseUUIDPipe,
+  Post,
   Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -14,7 +18,10 @@ import {
   BookingServiceInterface,
 } from '@/booking/interfaces/booking-service.interface';
 import { AvailableSlotsQueryDto } from '@/booking/dto/available-slots-query.dto';
+import { CreateClientBookingDto } from '@/booking/dto/create-client-booking.dto';
+import { OptionalClientAuthenticationGuard } from '@/auth-client/guards/optional-client-authentication.guard';
 import {
+  ApiCreateClientBooking,
   ApiFindAvailableSlots,
   ApiFindBookableEmployees,
   ApiFindBookableServices,
@@ -52,5 +59,16 @@ export class BookingController {
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
   ): Promise<ResponseDto> {
     return await this.bookingService.findBookableEmployees(serviceId);
+  }
+
+  @ApiCreateClientBooking()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @UseGuards(OptionalClientAuthenticationGuard)
+  @Post('appointments')
+  async createAppointment(
+    @Body() dto: CreateClientBookingDto,
+    @Request() req,
+  ): Promise<ResponseDto> {
+    return await this.bookingService.createAppointment(dto, req.clientId);
   }
 }

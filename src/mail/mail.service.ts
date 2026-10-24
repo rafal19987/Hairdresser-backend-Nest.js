@@ -68,6 +68,12 @@ export class MailService implements MailServiceInterface {
     }
   }
 
+  async sendBookingManageLink(email: string, manageUrl: string): Promise<void> {
+    await this._sendTemplate(email, branding =>
+      MailTemplates.bookingManageLink(manageUrl, branding),
+    );
+  }
+
   async sendInvitation(email: string, invitationToken: string): Promise<void> {
     const appUrl = this.configService.get<string>('APP_URL');
     const link = `${appUrl}/set-password/${invitationToken}`;
