@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Param,
   ParseUUIDPipe,
@@ -12,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Permissions } from '@/decorators/permissions.decorator';
 import { Resource } from '@/roles/enums/resource.enum';
 import { Action } from '@/roles/enums/action.enum';
@@ -23,6 +26,7 @@ import { AuthorizationGuard } from '@/guards/authorization.guard';
 import { Client } from '@/clients/entities/client.entity';
 import { CreateClientDto } from '@/clients/dto/create-client.dto';
 import { UpdateClientDto } from '@/clients/dto/update-client.dto';
+import { ResendVerificationDto } from '@/clients/dto/resend-verification.dto';
 import {
   CLIENTS_SERVICE,
   ClientsServiceInterface,
@@ -32,6 +36,7 @@ import {
   ApiDeleteClient,
   ApiFindAllClients,
   ApiFindOneClient,
+  ApiResendClientVerification,
   ApiUpdateClient,
   ApiVerifyClientEmail,
 } from '@/clients/decorators/clients-swagger.decorator';
@@ -80,6 +85,18 @@ export class ClientsController {
     @Param('token', ParseUUIDPipe) token: string,
   ): Promise<ResponseDto> {
     return await this.clientsService.verifyEmail(token);
+  }
+
+  @ApiResendClientVerification()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Post('resend-verification')
+  async resendVerification(
+    @Body() resendVerificationDto: ResendVerificationDto,
+  ): Promise<ResponseDto> {
+    return await this.clientsService.resendVerification(
+      resendVerificationDto.email,
+    );
   }
 
   @ApiUpdateClient()

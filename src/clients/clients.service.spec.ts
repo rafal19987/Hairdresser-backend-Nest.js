@@ -1,18 +1,133 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ClientsService } from './clients.service';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import {
+  ClientsService,
+  EMAIL_VERIFICATION_TTL_HOURS,
+} from './clients.service';
+import { Client } from '@/clients/entities/client.entity';
+import { MailService } from '@/mail/mail.service';
+import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
+import { ClientVerificationTokenExpiredException } from '@/clients/exceptions/client-verification-token-expired.exception';
 
 describe('ClientsService', () => {
   let service: ClientsService;
 
+  const clientRepository = {
+    findOneBy: jest.fn(),
+    save: jest.fn(),
+  };
+
+  const mailService = {
+    sendClientEmailVerification: jest.fn(),
+  };
+
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClientsService],
+      providers: [
+        ClientsService,
+        { provide: getRepositoryToken(Client), useValue: clientRepository },
+        { provide: MailService, useValue: mailService },
+      ],
     }).compile();
 
     service = module.get<ClientsService>(ClientsService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  describe('verifyEmail', () => {
+    it('throws when token does not exist', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.verifyEmail('token')).rejects.toBeInstanceOf(
+        ClientNotFoundException,
+      );
+    });
+
+    it('throws ClientVerificationTokenExpiredException when token is expired', async () => {
+      const expiredDate = new Date(
+        Date.now() - (EMAIL_VERIFICATION_TTL_HOURS + 1) * 60 * 60 * 1000,
+      );
+      clientRepository.findOneBy.mockResolvedValue({
+        emailVerificationToken: 'token',
+        emailVerificationDate: expiredDate,
+      });
+
+      await expect(service.verifyEmail('token')).rejects.toBeInstanceOf(
+        ClientVerificationTokenExpiredException,
+      );
+      expect(clientRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('activates client when token is valid', async () => {
+      const client = {
+        emailVerificationToken: 'token',
+        emailVerificationDate: new Date(),
+        emailVerified: false,
+        active: false,
+      };
+      clientRepository.findOneBy.mockResolvedValue(client);
+
+      await service.verifyEmail('token');
+
+      expect(clientRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          emailVerified: true,
+          active: true,
+          emailVerificationToken: null,
+        }),
+      );
+    });
+  });
+
+  describe('resendVerification', () => {
+    it('returns generic response and sends nothing when client does not exist', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+
+      const result = await service.resendVerification('none@example.com');
+
+      expect(result.statusCode).toBe(200);
+      expect(mailService.sendClientEmailVerification).not.toHaveBeenCalled();
+    });
+
+    it('returns the same response and sends nothing when client is already verified', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        email: 'jan@example.com',
+        emailVerified: true,
+      });
+
+      const unknown = await service.resendVerification('none@example.com');
+      clientRepository.findOneBy.mockResolvedValue({
+        email: 'jan@example.com',
+        emailVerified: true,
+      });
+      const verified = await service.resendVerification('jan@example.com');
+
+      expect(verified).toEqual(unknown);
+      expect(mailService.sendClientEmailVerification).not.toHaveBeenCalled();
+    });
+
+    it('generates new token and sends email for unverified client', async () => {
+      const oldDate = new Date('2020-01-01');
+      const client = {
+        email: 'jan@example.com',
+        emailVerified: false,
+        emailVerificationToken: 'old-token',
+        emailVerificationDate: oldDate,
+      };
+      clientRepository.findOneBy.mockResolvedValue(client);
+
+      await service.resendVerification('jan@example.com');
+
+      expect(client.emailVerificationToken).not.toBe('old-token');
+      expect(client.emailVerificationDate.getTime()).toBeGreaterThan(
+        oldDate.getTime(),
+      );
+      expect(clientRepository.save).toHaveBeenCalledWith(client);
+      expect(mailService.sendClientEmailVerification).toHaveBeenCalledWith(
+        'jan@example.com',
+        client.emailVerificationToken,
+      );
+    });
   });
 });

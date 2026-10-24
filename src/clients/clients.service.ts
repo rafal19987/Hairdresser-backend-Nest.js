@@ -13,6 +13,7 @@ import { CreateClientDto } from '@/clients/dto/create-client.dto';
 import { UpdateClientDto } from '@/clients/dto/update-client.dto';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
 import { ClientAlreadyExistsException } from '@/clients/exceptions/client-already-exists.exception';
+import { ClientVerificationTokenExpiredException } from '@/clients/exceptions/client-verification-token-expired.exception';
 import { MailService } from '@/mail/mail.service';
 
 export const EMAIL_VERIFICATION_TTL_HOURS = 24;
@@ -162,12 +163,7 @@ export class ClientsService implements ClientsServiceInterface {
       new Date().getTime() - new Date(client.emailVerificationDate).getTime() >
       ttlMs;
 
-    if (isExpired) {
-      return ResponseHelper.success(
-        'Token weryfikacji wygasł. Zarejestruj się ponownie.',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+    if (isExpired) throw new ClientVerificationTokenExpiredException();
 
     client.emailVerified = true;
     client.emailVerificationToken = null;
@@ -179,6 +175,29 @@ export class ClientsService implements ClientsServiceInterface {
     return ResponseHelper.success(
       'Email został zweryfikowany. Możesz się teraz zalogować.',
     );
+  }
+
+  public async resendVerification(email: string): Promise<ResponseDto> {
+    // Ta sama odpowiedź niezależnie od istnienia konta - brak enumeracji emaili
+    const response = ResponseHelper.success(
+      'Jeśli konto wymaga aktywacji, wysłaliśmy nowy link na podany email.',
+    );
+
+    const client = await this.clientRepository.findOneBy({ email });
+
+    if (!client || client.emailVerified) return response;
+
+    client.emailVerificationToken = crypto.randomUUID();
+    client.emailVerificationDate = new Date();
+
+    await this.clientRepository.save(client);
+
+    await this.mailService.sendClientEmailVerification(
+      client.email,
+      client.emailVerificationToken,
+    );
+
+    return response;
   }
 
   public async findByEmail(email: string): Promise<Client | null> {
