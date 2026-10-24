@@ -232,7 +232,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       clientPhone,
       scheduledAt,
       scheduledEndAt,
-      createdBy: userService.user,
+      createdBy: this._userReference(options.createdByUuid),
     });
 
     await this._save(appointment, { employeeUuid: userService.user.uuid });
@@ -266,6 +266,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
   public async createInternal(
     dto: CreateInternalAppointmentDto,
+    createdByUuid?: string,
   ): Promise<ResponseDto> {
     const scheduledAt = new Date(dto.scheduledAt);
     const scheduledEndAt = new Date(dto.scheduledEndAt);
@@ -328,7 +329,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       eventLocalization: dto.eventLocalization,
       scheduledAt,
       scheduledEndAt,
-      createdBy: owner,
+      createdBy: this._userReference(createdByUuid),
     });
 
     await this._save(appointment);
@@ -515,8 +516,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     appointment.status = AppointmentStatus.RESCHEDULED;
     appointment.rescheduledBy = dto.rescheduledBy;
     appointment.rescheduledAt = new Date();
-
-    if (dto.note !== undefined) appointment.note = dto.note;
+    appointment.rescheduleReason = dto.rescheduleReason ?? null;
 
     await this._save(appointment, {
       employeeUuid: appointment.calendar.owner.uuid,
@@ -533,6 +533,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       previousScheduledAt,
       previousScheduledEndAt,
       rescheduledBy: dto.rescheduledBy,
+      rescheduleReason: dto.rescheduleReason,
     };
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
@@ -618,6 +619,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
         'Wybrany pracownik jest niedostępny',
       );
     }
+  }
+
+  private _userReference(uuid?: string): User | null {
+    return uuid ? ({ uuid } as User) : null;
   }
 
   private async _findClient(uuid?: string): Promise<Client | null> {

@@ -20,6 +20,7 @@ type AppointmentFields = Pick<
   | 'cancellationReason'
   | 'rescheduledBy'
   | 'rescheduledAt'
+  | 'rescheduleReason'
   | 'previousScheduledAt'
   | 'previousScheduledEndAt'
   | 'deleted'

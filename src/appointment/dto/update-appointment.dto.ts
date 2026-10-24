@@ -10,6 +10,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { IsAfter } from '@/appointment/validators/date-range.validator';
+import { HasTimeZone } from '@/appointment/validators/has-time-zone.validator';
 
 export const UPDATABLE_APPOINTMENT_STATUSES = [
   AppointmentStatus.PENDING,
@@ -57,11 +58,13 @@ export class UpdateAppointmentDto {
   @ApiProperty({ example: '2026-03-01T10:00:00.000Z', required: false })
   @IsOptional()
   @IsDateString()
+  @HasTimeZone()
   scheduledAt?: string;
 
   @ApiProperty({ example: '2026-03-01T11:00:00.000Z', required: false })
   @IsOptional()
   @IsDateString()
+  @HasTimeZone()
   @IsAfter('scheduledAt', {
     message: 'Data zakończenia musi być późniejsza niż data rozpoczęcia',
   })

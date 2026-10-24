@@ -414,6 +414,22 @@ describe('AppointmentsService', () => {
       expect(mailService.sendAppointmentCreatedToEmployee).toHaveBeenCalled();
     });
 
+    it('stores logged in user as creator', async () => {
+      await service.create(dto, { createdByUuid: 'receptionist-uuid' });
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ createdBy: { uuid: 'receptionist-uuid' } }),
+      );
+    });
+
+    it('leaves creator empty when booking has no logged in user', async () => {
+      await service.create(dto);
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ createdBy: null }),
+      );
+    });
+
     it('looks only for active, not deleted default calendar', async () => {
       calendarRepository.findOneBy.mockResolvedValue(null);
 
@@ -559,6 +575,14 @@ describe('AppointmentsService', () => {
           duration: 45,
           price: null,
         }),
+      );
+    });
+
+    it('stores logged in user as creator of internal event', async () => {
+      await service.createInternal(dto, 'manager-uuid');
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ createdBy: { uuid: 'manager-uuid' } }),
       );
     });
 
@@ -1019,6 +1043,42 @@ describe('AppointmentsService', () => {
           scheduledAt: new Date(dto.scheduledAt),
           previousScheduledAt: new Date('2026-11-02T10:00:00.000Z'),
         }),
+      );
+    });
+
+    it('stores reschedule reason without overwriting client note', async () => {
+      appointmentRepository.findOne.mockResolvedValue(
+        createAppointment({ note: 'Proszę o kontakt telefoniczny' }),
+      );
+
+      await service.reschedule('appointment-uuid', {
+        ...dto,
+        rescheduleReason: 'Choroba pracownika',
+      });
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          note: 'Proszę o kontakt telefoniczny',
+          rescheduleReason: 'Choroba pracownika',
+        }),
+      );
+      expect(
+        mailService.sendAppointmentRescheduledToClient,
+      ).toHaveBeenCalledWith(
+        'jan@example.com',
+        expect.objectContaining({ rescheduleReason: 'Choroba pracownika' }),
+      );
+    });
+
+    it('clears reason of previous reschedule', async () => {
+      appointmentRepository.findOne.mockResolvedValue(
+        createAppointment({ rescheduleReason: 'Stary powód' }),
+      );
+
+      await service.reschedule('appointment-uuid', dto);
+
+      expect(appointmentRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ rescheduleReason: null }),
       );
     });
   });

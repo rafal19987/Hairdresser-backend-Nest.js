@@ -60,6 +60,7 @@ export interface AppointmentRescheduledMailData extends AppointmentMailData {
   previousScheduledAt: Date;
   previousScheduledEndAt: Date;
   rescheduledBy: string;
+  rescheduleReason?: string;
 }
 
 export const MAIL_SERVICE = 'MAIL_SERVICE';

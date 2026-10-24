@@ -4,10 +4,13 @@ import {
   AppointmentRescheduledMailData,
 } from '@/mail/interfaces/mail.interface';
 
+const SALON_TIME_ZONE = 'Europe/Warsaw';
+
 const formatDate = (date: Date): string =>
   new Date(date).toLocaleString('pl-PL', {
     dateStyle: 'full',
     timeStyle: 'short',
+    timeZone: SALON_TIME_ZONE,
   });
 
 export const MailTemplates = {
@@ -122,6 +125,7 @@ export const MailTemplates = {
         <tr><td><strong>Nowy termin:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
         <tr><td><strong>Nowy czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
         <tr><td><strong>Przełożono przez:</strong></td><td>${data.rescheduledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
+        ${data.rescheduleReason ? `<tr><td><strong>Powód:</strong></td><td>${data.rescheduleReason}</td></tr>` : ''}
       </table>
     `,
   }),
@@ -137,6 +141,7 @@ export const MailTemplates = {
         <tr><td><strong>Nowy termin:</strong></td><td>${formatDate(data.scheduledAt)}</td></tr>
         <tr><td><strong>Nowy czas zakończenia:</strong></td><td>${formatDate(data.scheduledEndAt)}</td></tr>
         <tr><td><strong>Przełożono przez:</strong></td><td>${data.rescheduledBy === 'client' ? 'Klienta' : 'Salon'}</td></tr>
+        ${data.rescheduleReason ? `<tr><td><strong>Powód:</strong></td><td>${data.rescheduleReason}</td></tr>` : ''}
       </table>
     `,
   }),

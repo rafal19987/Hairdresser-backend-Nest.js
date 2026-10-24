@@ -41,6 +41,7 @@ export function toAppointmentResponse(
     cancelledAt: appointment.cancelledAt,
     cancellationReason: appointment.cancellationReason,
     rescheduledBy: appointment.rescheduledBy,
+    rescheduleReason: appointment.rescheduleReason,
     rescheduledAt: appointment.rescheduledAt,
     previousScheduledAt: appointment.previousScheduledAt,
     previousScheduledEndAt: appointment.previousScheduledEndAt,

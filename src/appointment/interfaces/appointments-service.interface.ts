@@ -11,6 +11,7 @@ import { ResponseDto } from '@/common/dto/response.dto';
 export interface CreateAppointmentOptions {
   clientUuid?: string;
   bookedByClient?: boolean;
+  createdByUuid?: string;
 }
 
 export interface AppointmentsServiceInterface {
@@ -28,6 +29,7 @@ export interface AppointmentsServiceInterface {
   ): Promise<ResponseDto>;
   createInternal(
     createInternalAppointmentDto: CreateInternalAppointmentDto,
+    createdByUuid?: string,
   ): Promise<ResponseDto>;
   update(
     uuid: string,

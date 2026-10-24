@@ -129,6 +129,9 @@ export class Appointment {
   @Column({ type: 'timestamp', nullable: true })
   rescheduledAt?: Date;
 
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  rescheduleReason?: string;
+
   @Column({ type: 'timestamp', nullable: true })
   previousScheduledAt?: Date;
 
