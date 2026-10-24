@@ -17,6 +17,7 @@ import { UsersServicesModule } from './users-services/users-services.module';
 import { ClientsModule } from './clients/clients.module';
 import { AuthClientModule } from './auth-client/auth-client.module';
 import { SalonModule } from './salon/salon.module';
+import { BookingModule } from './booking/booking.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { SalonModule } from './salon/salon.module';
     ClientsModule,
     AuthClientModule,
     SalonModule,
+    BookingModule,
   ],
   controllers: [AppController],
   providers: [

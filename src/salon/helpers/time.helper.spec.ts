@@ -1,10 +1,13 @@
 import {
+  addDays,
   findTimeRangeError,
+  fromLocalDateTime,
   formatLocalDate,
   isoDayOfWeek,
   timeColumnTransformer,
   toLocalDateTime,
   toMinutes,
+  toTime,
 } from '@/salon/helpers/time.helper';
 
 describe('time helper', () => {
@@ -83,5 +86,32 @@ describe('time helper', () => {
   it('returns ISO day of week', () => {
     expect(isoDayOfWeek('2026-11-02')).toBe(1);
     expect(isoDayOfWeek('2026-11-08')).toBe(7);
+  });
+
+  it('formats minutes as time', () => {
+    expect(toTime(0)).toBe('00:00');
+    expect(toTime(9 * 60 + 5)).toBe('09:05');
+  });
+
+  it('adds days across month and year boundaries', () => {
+    expect(addDays('2026-11-30', 1)).toBe('2026-12-01');
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+  });
+
+  it('converts salon local time to UTC with daylight saving time', () => {
+    expect(
+      fromLocalDateTime('2026-11-02', 9 * 60, 'Europe/Warsaw').toISOString(),
+    ).toBe('2026-11-02T08:00:00.000Z');
+    expect(
+      fromLocalDateTime('2026-07-01', 9 * 60, 'Europe/Warsaw').toISOString(),
+    ).toBe('2026-07-01T07:00:00.000Z');
+  });
+
+  it('converts local midnight on the day of time change', () => {
+    // Clocks go back on 2026-10-25, so that day lasts 25 hours
+    const start = fromLocalDateTime('2026-10-25', 0, 'Europe/Warsaw');
+    const end = fromLocalDateTime('2026-10-26', 0, 'Europe/Warsaw');
+
+    expect(end.getTime() - start.getTime()).toBe(25 * 60 * 60 * 1000);
   });
 });

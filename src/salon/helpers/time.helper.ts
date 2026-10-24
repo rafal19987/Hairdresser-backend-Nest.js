@@ -1,3 +1,4 @@
+import { TZDate } from '@date-fns/tz';
 import { ValueTransformer } from 'typeorm';
 
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -74,3 +75,30 @@ export const toLocalDateTime = (
 
 export const isoDayOfWeek = (date: string): number =>
   new Date(`${date}T00:00:00.000Z`).getUTCDay() || 7;
+
+export const toTime = (minutes: number): string =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+export const addDays = (date: string, days: number): string =>
+  new Date(Date.parse(`${date}T00:00:00.000Z`) + days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+export const fromLocalDateTime = (
+  date: string,
+  minutes: number,
+  timeZone: string,
+): Date => {
+  const [year, month, day] = date.split('-').map(Number);
+
+  return new Date(
+    new TZDate(
+      year,
+      month - 1,
+      day,
+      Math.floor(minutes / 60),
+      minutes % 60,
+      timeZone,
+    ).getTime(),
+  );
+};

@@ -26,6 +26,7 @@
     "seed": "node -r tsconfig-paths/register -r ts-node/register src/database/seed.ts"
   },
   "dependencies": {
+    "@date-fns/tz": "^1.5.0",
     "@nestjs/common": "^11.1.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.1.0",

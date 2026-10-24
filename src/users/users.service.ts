@@ -19,6 +19,9 @@ import { MailService } from '@/mail/mail.service';
 import { UserAlreadyActiveException } from '@/users/exceptions/user-already-active.exception';
 import { UserNotActiveException } from '@/users/exceptions/user-not-active.exception';
 import { RefreshToken } from '@/auth/entities/refresh-token.entity';
+import { Appointment } from '@/appointment/entities/appointment.entity';
+import { countUpcomingClientAppointments } from '@/appointment/helpers/upcoming-client-appointments.helper';
+import { UserHasUpcomingAppointmentsException } from '@/users/exceptions/user-has-upcoming-appointments.exception';
 
 @Injectable()
 export class UsersService implements UsersServiceInterface {
@@ -29,6 +32,8 @@ export class UsersService implements UsersServiceInterface {
     private readonly roleRepository: Repository<Role>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
+    @InjectRepository(Appointment)
+    private readonly appointmentRepository: Repository<Appointment>,
     private readonly mailService: MailService,
   ) {}
 
@@ -159,6 +164,7 @@ export class UsersService implements UsersServiceInterface {
     if (!user) throw new UserNotFoundException();
 
     if (editUserDto.active === false && user.active === true) {
+      await this._assertNoUpcomingClientAppointments(uuid);
       await this.refreshTokenRepository.delete({ user: { uuid } });
     }
 
@@ -192,6 +198,9 @@ export class UsersService implements UsersServiceInterface {
 
     if (!user) throw new UserNotFoundException();
 
+    // Deleting the user cascades to calendars and their appointments
+    await this._assertNoUpcomingClientAppointments(uuid);
+
     await this.userRepository.remove(user);
 
     return ResponseHelper.deleted('User successfully deleted');
@@ -203,6 +212,8 @@ export class UsersService implements UsersServiceInterface {
     });
 
     if (!user) throw new UserNotFoundException();
+
+    await this._assertNoUpcomingClientAppointments(uuid);
 
     user.deleted = true;
     user.active = false;
@@ -268,5 +279,16 @@ export class UsersService implements UsersServiceInterface {
     await this.mailService.sendInvitation(user.email, invitationToken);
 
     return ResponseHelper.success('Zaproszenie zostało wysłane ponownie');
+  }
+
+  private async _assertNoUpcomingClientAppointments(
+    uuid: string,
+  ): Promise<void> {
+    const count = await countUpcomingClientAppointments(
+      this.appointmentRepository,
+      { calendar: { owner: { uuid } } },
+    );
+
+    if (count > 0) throw new UserHasUpcomingAppointmentsException(count);
   }
 }
