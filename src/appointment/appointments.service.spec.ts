@@ -27,6 +27,7 @@ import { UserServiceNotFoundException } from '@/users-services/exceptions/users-
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
 import { DataSource } from 'typeorm';
 import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
+import { BookingAccessService } from '@/booking-access/booking-access.service';
 import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
 import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
 
@@ -179,10 +180,17 @@ describe('AppointmentsService', () => {
     findOpeningRanges: jest.fn(),
   };
 
+  const bookingAccessService = { createManageUrl: jest.fn() };
+
+  const flushMails = () => new Promise(resolve => setImmediate(resolve));
+
   beforeEach(async () => {
     jest.clearAllMocks();
     jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
     salonService.getBookingSettings.mockResolvedValue(salon);
+    bookingAccessService.createManageUrl.mockResolvedValue(
+      'https://reve.pl/moje-wizyty/token',
+    );
     salonService.findOpeningRanges.mockResolvedValue([
       { opensAt: '00:00', closesAt: '23:59' },
     ]);
@@ -211,6 +219,7 @@ describe('AppointmentsService', () => {
         { provide: MailService, useValue: mailService },
         { provide: DataSource, useValue: dataSource },
         { provide: SALON_SERVICE, useValue: salonService },
+        { provide: BookingAccessService, useValue: bookingAccessService },
       ],
     }).compile();
 
@@ -1382,6 +1391,92 @@ describe('AppointmentsService', () => {
       const result = await service.create(dto);
 
       expect(result.data.status).toBe(AppointmentStatus.PENDING);
+    });
+  });
+
+  describe('client mail manage link', () => {
+    beforeEach(() => {
+      usersServicesRepository.findOne.mockResolvedValue(createUserService());
+      calendarRepository.findOneBy.mockResolvedValue({ uuid: 'calendar-uuid' });
+    });
+
+    it('adds manage link to client mail but not to employee mail', async () => {
+      await service.create({
+        userServiceId: 'user-service-uuid',
+        scheduledAt: '2026-11-02T10:00:00.000Z',
+        clientEmail: 'jan@example.com',
+      });
+      await flushMails();
+
+      expect(bookingAccessService.createManageUrl).toHaveBeenCalledWith(
+        'jan@example.com',
+      );
+      expect(mailService.sendAppointmentCreatedToClient).toHaveBeenCalledWith(
+        'jan@example.com',
+        expect.objectContaining({
+          manageUrl: 'https://reve.pl/moje-wizyty/token',
+        }),
+      );
+      expect(
+        mailService.sendAppointmentCreatedToEmployee.mock.calls[0][1],
+      ).not.toHaveProperty('manageUrl');
+    });
+
+    it('adds manage link to reschedule and cancel mails', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+
+      await service.reschedule('appointment-uuid', {
+        scheduledAt: '2026-11-03T10:00:00.000Z',
+        scheduledEndAt: '2026-11-03T11:00:00.000Z',
+        rescheduledBy: RescheduledBy.STAFF,
+      });
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      await service.cancel('appointment-uuid', {
+        cancelledBy: CancelledBy.STAFF,
+      });
+      await flushMails();
+
+      expect(
+        mailService.sendAppointmentRescheduledToClient.mock.calls[0][1]
+          .manageUrl,
+      ).toBe('https://reve.pl/moje-wizyty/token');
+      expect(
+        mailService.sendAppointmentCancelledToClient.mock.calls[0][1].manageUrl,
+      ).toBe('https://reve.pl/moje-wizyty/token');
+    });
+
+    it('still sends client mail when link cannot be created', async () => {
+      bookingAccessService.createManageUrl.mockResolvedValue(null);
+
+      await service.create({
+        userServiceId: 'user-service-uuid',
+        scheduledAt: '2026-11-02T10:00:00.000Z',
+        clientEmail: 'jan@example.com',
+      });
+      await flushMails();
+
+      expect(
+        mailService.sendAppointmentCreatedToClient.mock.calls[0][1].manageUrl,
+      ).toBeUndefined();
+    });
+
+    it('applies client rules when client reschedules', async () => {
+      appointmentRepository.findOne.mockResolvedValue(createAppointment());
+      const in30Minutes = new Date(NOW.getTime() + 30 * 60 * 1000);
+
+      await expect(
+        service.reschedule(
+          'appointment-uuid',
+          {
+            scheduledAt: in30Minutes.toISOString(),
+            scheduledEndAt: new Date(
+              in30Minutes.getTime() + 60 * 60 * 1000,
+            ).toISOString(),
+            rescheduledBy: RescheduledBy.CLIENT,
+          },
+          { bookedByClient: true },
+        ),
+      ).rejects.toBeInstanceOf(AppointmentLeadTimeException);
     });
   });
 

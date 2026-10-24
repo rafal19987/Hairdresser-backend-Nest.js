@@ -14,6 +14,7 @@ export interface MailBranding {
 
 export interface MailServiceInterface {
   send(options: MailOptions): Promise<void>;
+  sendBookingManageLink(email: string, manageUrl: string): Promise<void>;
   sendInvitation(email: string, invitationToken: string): Promise<void>;
   sendClientEmailVerification(
     email: string,
@@ -57,6 +58,8 @@ export interface AppointmentMailData {
   scheduledEndAt: Date;
   price: number;
   note?: string;
+  // Link to the client page with their appointments
+  manageUrl?: string;
 }
 
 export interface AppointmentCancelledMailData extends AppointmentMailData {

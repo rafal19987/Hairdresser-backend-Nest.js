@@ -15,6 +15,7 @@ import { ClientsModule } from '@/clients/clients.module';
 import { UsersServicesModule } from '@/users-services/users-services.module';
 import { MailModule } from '@/mail/mail.module';
 import { SalonModule } from '@/salon/salon.module';
+import { BookingAccessModule } from '@/booking-access/booking-access.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SalonModule } from '@/salon/salon.module';
     forwardRef(() => UsersServicesModule),
     MailModule,
     SalonModule,
+    BookingAccessModule,
   ],
   providers: [
     {

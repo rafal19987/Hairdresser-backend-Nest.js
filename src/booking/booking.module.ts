@@ -10,12 +10,19 @@ import { BookingService } from '@/booking/booking.service';
 import { BOOKING_SERVICE } from '@/booking/interfaces/booking-service.interface';
 import { Client } from '@/clients/entities/client.entity';
 import { AppointmentsModule } from '@/appointment/appointments.module';
+import { BookingAccessModule } from '@/booking-access/booking-access.module';
+import { MailModule } from '@/mail/mail.module';
+import { BookingManageController } from '@/booking/booking-manage.controller';
+import { BookingManageService } from '@/booking/booking-manage.service';
+import { BOOKING_MANAGE_SERVICE } from '@/booking/interfaces/booking-manage-service.interface';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Appointment, Service, UsersServices, Client]),
     SalonModule,
     AppointmentsModule,
+    BookingAccessModule,
+    MailModule,
     // Client token guard passes the client secret explicitly
     JwtModule.register({}),
   ],
@@ -24,8 +31,12 @@ import { AppointmentsModule } from '@/appointment/appointments.module';
       provide: BOOKING_SERVICE,
       useClass: BookingService,
     },
+    {
+      provide: BOOKING_MANAGE_SERVICE,
+      useClass: BookingManageService,
+    },
   ],
-  controllers: [BookingController],
+  controllers: [BookingController, BookingManageController],
   exports: [BOOKING_SERVICE],
 })
 export class BookingModule {}

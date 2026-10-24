@@ -152,4 +152,34 @@ describe('MailTemplates', () => {
 
     expect(html).not.toContain('<i>Salon</i>');
   });
+
+  it('adds manage link to client mails when provided', () => {
+    const { html } = MailTemplates.appointmentCreatedToClient(
+      { ...mailData, manageUrl: 'https://reve.pl/moje-wizyty/abc' },
+      branding,
+    );
+
+    expect(html).toContain(
+      '<a href="https:&#x2F;&#x2F;reve.pl&#x2F;moje-wizyty&#x2F;abc">Zarządzaj swoimi wizytami</a>',
+    );
+  });
+
+  it('omits manage link without url', () => {
+    const { html } = MailTemplates.appointmentCreatedToClient(
+      mailData,
+      branding,
+    );
+
+    expect(html).not.toContain('Zarządzaj swoimi wizytami');
+  });
+
+  it('builds manage link mail', () => {
+    const template = MailTemplates.bookingManageLink(
+      'https://reve.pl/moje-wizyty/abc',
+      branding,
+    );
+
+    expect(template.subject).toBe('Twoje wizyty — Rêve');
+    expect(template.html).toContain('Zobacz swoje wizyty');
+  });
 });

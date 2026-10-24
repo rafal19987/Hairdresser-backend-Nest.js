@@ -19,6 +19,7 @@ import { createPaginatedResponse } from '@/common/helpers/pagination.helper';
 import {
   AppointmentsServiceInterface,
   CreateAppointmentOptions,
+  RescheduleAppointmentOptions,
 } from '@/appointment/interfaces/appointments-service.interface';
 import { AppointmentNotFoundException } from '@/appointment/exceptions/appointment-not-found.exception';
 import { AppointmentAlreadyCancelledException } from '@/appointment/exceptions/appointment-already-cancelled.exception';
@@ -54,6 +55,7 @@ import { CalendarNotFoundException } from '@/calendar/exceptions/calendar-not-fo
 import { UserNotFoundException } from '@/users/exceptions/user-not-found.exception';
 import { AppointmentStatus } from '@/appointment/enums/appointment-status.enum';
 import { MailService } from '@/mail/mail.service';
+import { BookingAccessService } from '@/booking-access/booking-access.service';
 import {
   AppointmentMailData,
   AppointmentCancelledMailData,
@@ -82,6 +84,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     private readonly dataSource: DataSource,
     @Inject(SALON_SERVICE)
     private readonly salonService: SalonServiceInterface,
+    private readonly bookingAccessService: BookingAccessService,
   ) {}
 
   public async findAll(
@@ -271,13 +274,10 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       note: createAppointmentDto.note,
     };
 
-    this._sendMailSafe(() =>
+    this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
       status === AppointmentStatus.CONFIRMED
-        ? this.mailService.sendAppointmentConfirmedToClient(
-            clientEmail,
-            mailData,
-          )
-        : this.mailService.sendAppointmentCreatedToClient(clientEmail, mailData),
+        ? this.mailService.sendAppointmentConfirmedToClient(email, data)
+        : this.mailService.sendAppointmentCreatedToClient(email, data),
     );
 
     this._sendMailSafe(() =>
@@ -492,11 +492,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentCancelledToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
+        this.mailService.sendAppointmentCancelledToClient(email, data),
       );
     }
 
@@ -515,6 +512,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   public async reschedule(
     uuid: string,
     dto: RescheduleAppointmentDto,
+    options: RescheduleAppointmentOptions = {},
   ): Promise<ResponseDto> {
     const appointment = await this._findNotDeleted(uuid, [
       'calendar',
@@ -537,7 +535,11 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     this._assertNotInPast(scheduledAt);
 
     if (appointment.type === AppointmentType.CLIENT) {
-      await this._assertClientBookable(scheduledAt, scheduledEndAt);
+      await this._assertClientBookable(
+        scheduledAt,
+        scheduledEndAt,
+        options.bookedByClient,
+      );
     }
 
     const previousScheduledAt = appointment.scheduledAt;
@@ -576,11 +578,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
 
     const clientEmail = appointment.client?.email ?? appointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentRescheduledToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
+        this.mailService.sendAppointmentRescheduledToClient(email, data),
       );
     }
 
@@ -758,11 +757,8 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     const clientEmail =
       fullAppointment.client?.email ?? fullAppointment.clientEmail;
     if (clientEmail) {
-      this._sendMailSafe(() =>
-        this.mailService.sendAppointmentConfirmedToClient(
-          clientEmail,
-          mailData,
-        ),
+      this._sendClientMailSafe(clientEmail, mailData, (email, data) =>
+        this.mailService.sendAppointmentConfirmedToClient(email, data),
       );
     }
   }
@@ -784,6 +780,17 @@ export class AppointmentsService implements AppointmentsServiceInterface {
   private _sendMailSafe(fn: () => Promise<void>): void {
     fn().catch(error => {
       this.logger.error('Błąd wysyłania maila', error);
+    });
+  }
+
+  private _sendClientMailSafe<T extends AppointmentMailData>(
+    email: string,
+    mailData: T,
+    send: (email: string, data: T) => Promise<void>,
+  ): void {
+    this._sendMailSafe(async () => {
+      const manageUrl = await this.bookingAccessService.createManageUrl(email);
+      await send(email, { ...mailData, manageUrl: manageUrl ?? undefined });
     });
   }
 
