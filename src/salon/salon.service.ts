@@ -21,6 +21,7 @@ import {
   toSalonResponse,
   toSpecialDayResponse,
 } from '@/salon/mappers/salon-response.mapper';
+import { findDefaultSalon } from '@/salon/helpers/default-salon.helper';
 import {
   findTimeRangeError,
   formatLocalDate,
@@ -196,12 +197,8 @@ export class SalonService implements SalonServiceInterface {
     }));
   }
 
-  // Single-location setup: the oldest salon record is the salon
   private async _getSalon(): Promise<Salon> {
-    const [salon] = await this.salonRepository.find({
-      order: { createdAt: 'ASC' },
-      take: 1,
-    });
+    const salon = await findDefaultSalon(this.salonRepository);
 
     if (!salon) throw new SalonNotFoundException();
 
