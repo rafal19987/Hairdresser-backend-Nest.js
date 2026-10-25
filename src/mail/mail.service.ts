@@ -86,8 +86,11 @@ export class MailService implements MailServiceInterface {
     email: string,
     verificationToken: string,
   ): Promise<void> {
-    const appUrl = this.configService.get<string>('APP_URL');
-    const link = `${appUrl}/verify-email/${verificationToken}`;
+    // Clients verify on the public website, not in the admin panel
+    const accountUrl =
+      this.configService.get<string>('CLIENT_ACCOUNT_URL') ??
+      `${this.configService.get<string>('WEBSITE_URL')}/konto`;
+    const link = `${accountUrl.replace(/\/+$/, '')}/weryfikacja/${verificationToken}`;
     await this._sendTemplate(email, branding =>
       MailTemplates.clientEmailVerification(link, branding),
     );
