@@ -31,6 +31,10 @@ import {
   SalonServiceInterface,
 } from '@/salon/interfaces/salon-service.interface';
 import { BookingAccessService } from '@/booking-access/booking-access.service';
+import {
+  BOOKING_SERVICE,
+  BookingServiceInterface,
+} from '@/booking/interfaces/booking-service.interface';
 import { MailService } from '@/mail/mail.service';
 
 const MINUTE_MS = 60 * 1000;
@@ -50,6 +54,8 @@ export class BookingManageService implements BookingManageServiceInterface {
     private readonly salonService: SalonServiceInterface,
     private readonly bookingAccessService: BookingAccessService,
     private readonly mailService: MailService,
+    @Inject(BOOKING_SERVICE)
+    private readonly bookingService: BookingServiceInterface,
   ) {}
 
   public async findAppointments(email: string): Promise<ResponseDto> {
@@ -133,6 +139,27 @@ export class BookingManageService implements BookingManageServiceInterface {
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
     });
+  }
+
+  // Rescheduling keeps the employee, so only their slots are offered
+  public async findRescheduleSlots(
+    email: string,
+    uuid: string,
+    date: string,
+  ): Promise<ResponseDto> {
+    const appointment = await this._findChangeable(email, uuid);
+    const { service, user } = appointment.userService ?? {};
+
+    if (!service || !user) {
+      throw new AppointmentNotModifiableException(
+        'Tej wizyty nie można przełożyć online',
+      );
+    }
+
+    return this.bookingService.findAvailableSlots(
+      { serviceId: service.uuid, date, employeeId: user.uuid },
+      appointment.uuid,
+    );
   }
 
   // Same response whether or not the email has appointments, so it cannot be used to probe clients

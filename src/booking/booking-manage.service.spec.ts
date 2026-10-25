@@ -12,6 +12,7 @@ import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
 import { BookingAccessService } from '@/booking-access/booking-access.service';
 import { MailService } from '@/mail/mail.service';
 import { BookingChangeDeadlinePassedException } from '@/booking/exceptions/booking-change-deadline-passed.exception';
+import { BOOKING_SERVICE } from '@/booking/interfaces/booking-service.interface';
 
 const NOW = new Date('2026-11-01T08:00:00.000Z');
 const EMAIL = 'jan@example.com';
@@ -53,6 +54,7 @@ describe('BookingManageService', () => {
   const salonService = { getBookingSettings: jest.fn() };
   const bookingAccessService = { createManageUrl: jest.fn() };
   const mailService = { sendBookingManageLink: jest.fn() };
+  const bookingService = { findAvailableSlots: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -76,6 +78,7 @@ describe('BookingManageService', () => {
         { provide: SALON_SERVICE, useValue: salonService },
         { provide: BookingAccessService, useValue: bookingAccessService },
         { provide: MailService, useValue: mailService },
+        { provide: BOOKING_SERVICE, useValue: bookingService },
       ],
     }).compile();
 
@@ -233,6 +236,40 @@ describe('BookingManageService', () => {
         }),
       ).rejects.toBeInstanceOf(BookingChangeDeadlinePassedException);
       expect(appointmentsService.reschedule).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findRescheduleSlots', () => {
+    it('returns slots of the same employee without blocking the appointment itself', async () => {
+      await service.findRescheduleSlots(
+        EMAIL,
+        'appointment-uuid',
+        '2026-11-04',
+      );
+
+      expect(bookingService.findAvailableSlots).toHaveBeenCalledWith(
+        { serviceId: 'service-uuid', date: '2026-11-04', employeeId: 'anna' },
+        'appointment-uuid',
+      );
+    });
+
+    it('hides slots of appointments of other emails', async () => {
+      queryBuilder.getOne.mockResolvedValue(null);
+
+      await expect(
+        service.findRescheduleSlots(EMAIL, 'appointment-uuid', '2026-11-04'),
+      ).rejects.toBeInstanceOf(AppointmentNotFoundException);
+      expect(bookingService.findAvailableSlots).not.toHaveBeenCalled();
+    });
+
+    it('rejects appointments without a bookable service', async () => {
+      queryBuilder.getOne.mockResolvedValue(
+        createAppointment({ userService: null }),
+      );
+
+      await expect(
+        service.findRescheduleSlots(EMAIL, 'appointment-uuid', '2026-11-04'),
+      ).rejects.toBeInstanceOf(AppointmentNotModifiableException);
     });
   });
 

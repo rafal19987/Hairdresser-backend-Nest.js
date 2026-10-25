@@ -9,6 +9,8 @@ import {
 import { CreateClientDto } from '@/clients/dto/create-client.dto';
 import { UpdateClientDto } from '@/clients/dto/update-client.dto';
 import { ResendVerificationDto } from '@/clients/dto/resend-verification.dto';
+import { ForgotPasswordDto } from '@/clients/dto/forgot-password.dto';
+import { ResetPasswordDto } from '@/clients/dto/reset-password.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 
 const UuidParam = () =>
@@ -86,6 +88,31 @@ export function ApiResendClientVerification() {
     }),
     ApiBody({ type: ResendVerificationDto }),
     ApiResponse({ status: 200, description: 'Request accepted' }),
+  );
+}
+
+export function ApiForgotClientPassword() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Request client password reset',
+      description:
+        'Sends a password reset link valid for 60 minutes. Response is the same whether or not the account exists.',
+    }),
+    ApiBody({ type: ForgotPasswordDto }),
+    ApiResponse({ status: 200, description: 'Request accepted' }),
+  );
+}
+
+export function ApiResetClientPassword() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Reset client password',
+      description:
+        'Sets a new password using the emailed token, verifies the email and signs the client out everywhere.',
+    }),
+    ApiBody({ type: ResetPasswordDto }),
+    ApiResponse({ status: 200, description: 'Password changed' }),
+    ApiResponse({ status: 400, description: 'Invalid or expired token' }),
   );
 }
 

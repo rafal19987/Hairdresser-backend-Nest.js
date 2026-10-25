@@ -42,6 +42,13 @@ export class Client {
   @Column({ nullable: true, type: 'datetime' })
   emailVerificationDate: Date;
 
+  // Only the SHA-256 hash is stored, so a database leak does not expose working links
+  @Column({ type: 'char', length: 64, nullable: true, select: false })
+  passwordResetTokenHash: string | null;
+
+  @Column({ type: 'timestamp', nullable: true, select: false })
+  passwordResetExpiresAt: Date | null;
+
   @Column({ default: true, nullable: false })
   active: boolean;
 

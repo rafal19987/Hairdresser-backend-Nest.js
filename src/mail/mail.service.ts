@@ -86,10 +86,16 @@ export class MailService implements MailServiceInterface {
     email: string,
     verificationToken: string,
   ): Promise<void> {
-    const appUrl = this.configService.get<string>('APP_URL');
-    const link = `${appUrl}/verify-email/${verificationToken}`;
+    const link = `${this._clientAccountUrl()}/weryfikacja/${verificationToken}`;
     await this._sendTemplate(email, branding =>
       MailTemplates.clientEmailVerification(link, branding),
+    );
+  }
+
+  async sendClientPasswordReset(email: string, token: string): Promise<void> {
+    const link = `${this._clientAccountUrl()}/reset-hasla/${token}`;
+    await this._sendTemplate(email, branding =>
+      MailTemplates.clientPasswordReset(link, branding),
     );
   }
 
@@ -154,6 +160,15 @@ export class MailService implements MailServiceInterface {
     await this._sendTemplate(email, branding =>
       MailTemplates.appointmentRescheduledToEmployee(data, branding),
     );
+  }
+
+  // Client account pages live on the public website, not in the admin panel
+  private _clientAccountUrl(): string {
+    const accountUrl =
+      this.configService.get<string>('CLIENT_ACCOUNT_URL') ??
+      `${this.configService.get<string>('WEBSITE_URL')}/konto`;
+
+    return accountUrl.replace(/\/+$/, '');
   }
 
   private async _sendTemplate(

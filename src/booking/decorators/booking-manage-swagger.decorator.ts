@@ -12,6 +12,23 @@ const InvalidToken = () =>
     description: 'Missing, invalid or expired booking link token',
   });
 
+export function ApiFindManagedRescheduleSlots() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Get reschedule slots for own appointment',
+      description:
+        'Free slots of the same employee and service for one day. The appointment itself does not block its own time.',
+    }),
+    ApiResponse({ status: 200, description: 'Slots found' }),
+    InvalidToken(),
+    ApiResponse({ status: 404, description: 'Appointment not found' }),
+    ApiResponse({
+      status: 409,
+      description: 'Change deadline passed or appointment is finished',
+    }),
+  );
+}
+
 export function ApiSendManageLink() {
   return applyDecorators(
     ApiOperation({

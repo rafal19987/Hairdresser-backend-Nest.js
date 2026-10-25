@@ -9,10 +9,12 @@ describe('MailService', () => {
 
   const mailtrapClient = { send: jest.fn() };
   const salonRepository = { find: jest.fn() };
+  const config: Record<string, string> = {
+    MAIL_FROM: 'noreply@hairdresser.com',
+    CLIENT_ACCOUNT_URL: 'http://localhost:3001/konto/',
+  };
   const configService = {
-    get: jest.fn((key: string) =>
-      key === 'MAIL_FROM' ? 'noreply@hairdresser.com' : undefined,
-    ),
+    get: jest.fn((key: string) => config[key]),
   };
 
   const mailData = {
@@ -92,5 +94,28 @@ describe('MailService', () => {
     await expect(
       service.sendInvitation('anna@example.com', 'token'),
     ).rejects.toThrow('SMTP error');
+  });
+
+  it('links client email verification to the website account page', async () => {
+    salonRepository.find.mockResolvedValue([]);
+
+    await service.sendClientEmailVerification('ewa@example.com', 'token-123');
+
+    const [message] = mailtrapClient.send.mock.calls[0];
+    expect(message.html).toContain(
+      'http:&#x2F;&#x2F;localhost:3001&#x2F;konto&#x2F;weryfikacja&#x2F;token-123',
+    );
+    expect(message.html).not.toContain('verify-email');
+  });
+
+  it('links client password reset to the website account page', async () => {
+    salonRepository.find.mockResolvedValue([]);
+
+    await service.sendClientPasswordReset('ewa@example.com', 'token-123');
+
+    const [message] = mailtrapClient.send.mock.calls[0];
+    expect(message.html).toContain(
+      'http:&#x2F;&#x2F;localhost:3001&#x2F;konto&#x2F;reset-hasla&#x2F;token-123',
+    );
   });
 });

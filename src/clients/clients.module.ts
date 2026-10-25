@@ -9,10 +9,11 @@ import { AuthModule } from '@/auth/auth.module';
 import { MailModule } from '@/mail/mail.module';
 import { AuthenticationGuard } from '@/guards/authentication.guard';
 import { UsersModule } from '@/users/users.module';
+import { ClientRefreshToken } from '@/auth-client/entities/client-refresh-token.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Client, Appointment]),
+    TypeOrmModule.forFeature([Client, Appointment, ClientRefreshToken]),
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
     MailModule,
