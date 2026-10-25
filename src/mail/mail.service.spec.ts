@@ -107,4 +107,15 @@ describe('MailService', () => {
     );
     expect(message.html).not.toContain('verify-email');
   });
+
+  it('links client password reset to the website account page', async () => {
+    salonRepository.find.mockResolvedValue([]);
+
+    await service.sendClientPasswordReset('ewa@example.com', 'token-123');
+
+    const [message] = mailtrapClient.send.mock.calls[0];
+    expect(message.html).toContain(
+      'http:&#x2F;&#x2F;localhost:3001&#x2F;konto&#x2F;reset-hasla&#x2F;token-123',
+    );
+  });
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
@@ -9,6 +10,8 @@ import { MailService } from '@/mail/mail.service';
 import { Appointment } from '@/appointment/entities/appointment.entity';
 import { ClientNotFoundException } from '@/clients/exceptions/client-not-found.exception';
 import { ClientVerificationTokenExpiredException } from '@/clients/exceptions/client-verification-token-expired.exception';
+import { ClientPasswordResetTokenInvalidException } from '@/clients/exceptions/client-password-reset-token-invalid.exception';
+import { ClientRefreshToken } from '@/auth-client/entities/client-refresh-token.entity';
 
 describe('ClientsService', () => {
   let service: ClientsService;
@@ -17,6 +20,11 @@ describe('ClientsService', () => {
     findOneBy: jest.fn(),
     findOne: jest.fn(),
     save: jest.fn(),
+    update: jest.fn(),
+  };
+
+  const clientRefreshTokenRepository = {
+    delete: jest.fn(),
   };
 
   const linkQueryBuilder = {
@@ -33,6 +41,7 @@ describe('ClientsService', () => {
 
   const mailService = {
     sendClientEmailVerification: jest.fn(),
+    sendClientPasswordReset: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -48,10 +57,18 @@ describe('ClientsService', () => {
           provide: getRepositoryToken(Appointment),
           useValue: appointmentRepository,
         },
+        {
+          provide: getRepositoryToken(ClientRefreshToken),
+          useValue: clientRefreshTokenRepository,
+        },
       ],
     }).compile();
 
     service = module.get<ClientsService>(ClientsService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('verifyEmail', () => {
@@ -201,6 +218,136 @@ describe('ClientsService', () => {
 
       expect(result.statusCode).toBe(201);
       expect(result.data).not.toHaveProperty('password');
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    const genericMessage =
+      'Jeśli konto z tym adresem istnieje, wysłaliśmy na niego link do zmiany hasła.';
+
+    it('answers the same and sends nothing when account does not exist', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+
+      const result = await service.requestPasswordReset('nikt@example.com');
+
+      expect(result.message).toBe(genericMessage);
+      expect(clientRepository.update).not.toHaveBeenCalled();
+      expect(mailService.sendClientPasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('answers the same and sends nothing for deactivated account', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        email: 'jan@example.com',
+        active: false,
+      });
+
+      const result = await service.requestPasswordReset('jan@example.com');
+
+      expect(result.message).toBe(genericMessage);
+      expect(mailService.sendClientPasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('stores only the token hash and mails the raw token', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 10, 1, 8));
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        email: 'jan@example.com',
+        active: true,
+      });
+
+      const result = await service.requestPasswordReset('jan@example.com');
+
+      const [email, token] = mailService.sendClientPasswordReset.mock.calls[0];
+      expect(email).toBe('jan@example.com');
+      expect(clientRepository.update).toHaveBeenCalledWith('client-uuid', {
+        passwordResetTokenHash: createHash('sha256')
+          .update(token)
+          .digest('hex'),
+        passwordResetExpiresAt: new Date(Date.UTC(2026, 10, 1, 9)),
+      });
+      expect(result.message).toBe(genericMessage);
+    });
+
+    it('answers the same when mail fails', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        email: 'jan@example.com',
+        active: true,
+      });
+      mailService.sendClientPasswordReset.mockRejectedValue(new Error('SMTP'));
+
+      const result = await service.requestPasswordReset('jan@example.com');
+
+      expect(result.message).toBe(genericMessage);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('rejects unknown or expired token', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(
+        service.resetPassword('token', 'NoweHaslo123!'),
+      ).rejects.toBeInstanceOf(ClientPasswordResetTokenInvalidException);
+      expect(clientRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('looks the client up by token hash', async () => {
+      clientRepository.findOneBy.mockResolvedValue(null);
+
+      await service
+        .resetPassword('token', 'NoweHaslo123!')
+        .catch(() => undefined);
+
+      expect(clientRepository.findOneBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          passwordResetTokenHash: createHash('sha256')
+            .update('token')
+            .digest('hex'),
+          active: true,
+        }),
+      );
+    });
+
+    it('sets new password, clears token and signs out everywhere', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        email: 'jan@example.com',
+        emailVerified: true,
+      });
+
+      await service.resetPassword('token', 'NoweHaslo123!');
+
+      const [, changes] = clientRepository.update.mock.calls[0];
+      expect(changes).toEqual({
+        password: expect.any(String),
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+      });
+      expect(changes.password).not.toBe('NoweHaslo123!');
+      expect(clientRefreshTokenRepository.delete).toHaveBeenCalledWith({
+        client: { uuid: 'client-uuid' },
+      });
+      expect(linkQueryBuilder.execute).not.toHaveBeenCalled();
+    });
+
+    it('verifies email and links guest appointments of unverified account', async () => {
+      clientRepository.findOneBy.mockResolvedValue({
+        uuid: 'client-uuid',
+        email: 'jan@example.com',
+        emailVerified: false,
+      });
+
+      await service.resetPassword('token', 'NoweHaslo123!');
+
+      const [, changes] = clientRepository.update.mock.calls[0];
+      expect(changes).toMatchObject({
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationDate: null,
+      });
+      expect(linkQueryBuilder.execute).toHaveBeenCalled();
     });
   });
 });

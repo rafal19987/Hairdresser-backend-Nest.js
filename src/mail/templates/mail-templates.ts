@@ -69,6 +69,18 @@ export const MailTemplates = {
     `,
   }),
 
+  clientPasswordReset: (link: string, branding: MailBranding) => ({
+    subject: `Zmiana hasła — ${branding.salonName}`,
+    html: `
+      <h2>Zmiana hasła</h2>
+      <p>Otrzymaliśmy prośbę o zmianę hasła do Twojego konta w ${escapeHtml(branding.salonName)}. Kliknij poniższy link, aby ustawić nowe hasło:</p>
+      <a href="${escapeHtml(link)}">${escapeHtml(link)}</a>
+      <p>Link jest ważny przez 60 minut. Po zmianie hasła zostaniesz wylogowany na wszystkich urządzeniach.</p>
+      <p>Jeśli to nie Ty prosiłeś o zmianę hasła, zignoruj tę wiadomość — obecne hasło pozostanie bez zmian.</p>
+      ${footer(branding)}
+    `,
+  }),
+
   appointmentCreatedToClient: (
     data: AppointmentMailData,
     branding: MailBranding,
