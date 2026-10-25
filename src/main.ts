@@ -39,11 +39,14 @@ async function bootstrap() {
     }),
   );
 
+  const adminUrl =
+    nodeEnv === 'production'
+      ? configService.get('APP_URL')
+      : 'http://localhost:4200';
+
   app.enableCors({
-    origin:
-      nodeEnv === 'production'
-        ? configService.get('APP_URL')
-        : 'http://localhost:4200',
+    // Admin panel and the public website, which uses the booking API
+    origin: [adminUrl, configService.get('WEBSITE_URL')].filter(Boolean),
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
