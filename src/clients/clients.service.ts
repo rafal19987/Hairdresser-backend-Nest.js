@@ -86,7 +86,6 @@ export class ClientsService implements ClientsServiceInterface {
       firstName: createClientDto.firstName,
       lastName: createClientDto.lastName,
       phone: createClientDto.phone,
-      notes: createClientDto.notes,
       marketingConsent: createClientDto.marketingConsent ?? false,
       emailVerificationToken,
       emailVerificationDate,

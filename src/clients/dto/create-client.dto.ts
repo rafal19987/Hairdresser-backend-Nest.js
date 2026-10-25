@@ -35,11 +35,6 @@ export class CreateClientDto {
   @IsOptional()
   readonly phone?: string;
 
-  @ApiProperty({ example: 'Alergia na lakier', required: false })
-  @IsString()
-  @IsOptional()
-  readonly notes?: string;
-
   @ApiProperty({ example: false, required: false })
   @IsBoolean()
   @IsOptional()
