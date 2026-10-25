@@ -77,6 +77,7 @@ export class AuthController {
   }
 
   @ApiSetPassword()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('set-password/:token')
   async setPassword(
     @Param('token') token: string,
@@ -86,6 +87,7 @@ export class AuthController {
   }
 
   @ApiVerifyInvitation()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Get('verify-invitation/:token')
   async verifyInvitationToken(@Param('token') token: string) {
     return await this.authService.verifyInvitationToken(token);
