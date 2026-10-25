@@ -43,6 +43,19 @@ export function ApiFindAppointmentsByCalendar() {
   );
 }
 
+export function ApiFindAppointmentsInRange() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Pobierz wizyty z zakresu dat',
+      description:
+        'Wizyty nachodzące na zakres [from, to) z wybranych kalendarzy. Każdy kalendarz musi być widoczny dla użytkownika.',
+    }),
+    ApiResponse({ status: 200, description: 'Lista wizyt z zakresu' }),
+    ApiResponse({ status: 400, description: 'Nieprawidłowy zakres dat' }),
+    ApiResponse({ status: 403, description: 'Brak dostępu do kalendarza' }),
+  );
+}
+
 export function ApiFindOneAppointment() {
   return applyDecorators(
     ApiOperation({ summary: 'Pobierz wizytę po UUID' }),

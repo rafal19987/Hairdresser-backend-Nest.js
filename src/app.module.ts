@@ -23,10 +23,11 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    // Sized for staff working in the panel; public and credential routes set stricter limits
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 10,
+        limit: 120,
       },
     ]),
     ConfigModule.forRoot({

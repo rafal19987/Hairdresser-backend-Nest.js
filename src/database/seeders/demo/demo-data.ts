@@ -21,6 +21,34 @@ export const DEMO_EMPLOYEE_ROLE = {
   ] as PermissionDto[],
 };
 
+// `all` on calendar lets reception see every employee's calendar
+export const DEMO_RECEPTION_ROLE = {
+  name: 'reception',
+  displayName: 'Recepcja',
+  permissions: [
+    {
+      resource: Resource.CALENDAR,
+      actions: [Action.CREATE, Action.READ, Action.WRITE, Action.ALL],
+    },
+    { resource: Resource.CLIENTS, actions: [Action.READ, Action.WRITE] },
+    { resource: Resource.SERVICES, actions: [Action.READ] },
+    { resource: Resource.SETTINGS, actions: [Action.READ] },
+  ] as PermissionDto[],
+};
+
+export const DEMO_RECEPTION_USER = {
+  email: 'recepcja@demo.hairdresser.pl',
+  firstName: 'Monika',
+  lastName: 'Recepcja',
+};
+
+// Shows a calendar shared between employees: owner email -> shared with email
+export const DEMO_CALENDAR_SHARE = {
+  ownerEmail: 'anna.nowak@demo.hairdresser.pl',
+  sharedWithEmail: 'tomasz.wisniewski@demo.hairdresser.pl',
+  permission: 'read',
+};
+
 export const DEMO_SERVICES = {
   womenCut: {
     name: 'Strzyżenie damskie',

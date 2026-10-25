@@ -4,6 +4,7 @@ import { CreateInternalAppointmentDto } from '../dto/create-internal-appointment
 import { UpdateAppointmentDto } from '../dto/update-appointment.dto';
 import { CancelAppointmentDto } from '../dto/cancel-appointment.dto';
 import { RescheduleAppointmentDto } from '../dto/reschedule-appointment.dto';
+import { AppointmentsRangeQueryDto } from '../dto/appointments-range-query.dto';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { ResponseDto } from '@/common/dto/response.dto';
@@ -26,6 +27,10 @@ export interface AppointmentsServiceInterface {
     calendarUuid: string,
     paginationParams: PaginationParamsDto,
   ): Promise<PaginatedResultDto<AppointmentResponse>>;
+  findInRange(
+    query: AppointmentsRangeQueryDto,
+    userId: string,
+  ): Promise<ResponseDto>;
   find(uuid: string): Promise<ResponseDto>;
   create(
     createAppointmentDto: CreateAppointmentDto,

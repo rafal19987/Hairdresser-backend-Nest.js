@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  HttpStatus,
   Post,
   Body,
   Param,
@@ -24,9 +25,11 @@ import {
 import { Resource } from '@/roles/enums/resource.enum';
 import { Action } from '@/roles/enums/action.enum';
 import { ResponseDto } from '@/common/dto/response.dto';
+import { ResponseHelper } from '@/common/helpers/response.helper';
 import { PaginatedResultDto } from '@/common/dto/paginated-result.dto';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { Calendar } from '@/calendar/entities/calendar.entity';
+import { CalendarAccessService } from '@/calendar/calendar-access.service';
 import {
   ApiCreateCalendar,
   ApiDeleteCalendar,
@@ -34,6 +37,7 @@ import {
   ApiFindCalendarsByOwner,
   ApiFindMyCalendars,
   ApiFindOneCalendar,
+  ApiFindVisibleCalendars,
   ApiRestoreCalendar,
   ApiSetDefaultCalendar,
   ApiSoftDeleteCalendar,
@@ -48,6 +52,7 @@ export class CalendarController {
   constructor(
     @Inject(CALENDAR_SERVICE)
     private readonly calendarService: CalendarsServiceInterface,
+    private readonly calendarAccessService: CalendarAccessService,
   ) {}
 
   @ApiCreateCalendar()
@@ -77,6 +82,17 @@ export class CalendarController {
     @Request() req: any,
   ): Promise<PaginatedResultDto<Calendar>> {
     return await this.calendarService.findByOwner(req.userId, paginationParams);
+  }
+
+  @ApiFindVisibleCalendars()
+  @Permissions([{ resource: Resource.CALENDAR, actions: [Action.READ] }])
+  @Get('visible')
+  async findVisible(@Request() req: any): Promise<ResponseDto> {
+    return ResponseHelper.success(
+      'Visible calendars found',
+      HttpStatus.OK,
+      await this.calendarAccessService.findVisibleCalendars(req.userId),
+    );
   }
 
   @ApiFindCalendarsByOwner()
