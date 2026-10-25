@@ -27,6 +27,8 @@ import { Client } from '@/clients/entities/client.entity';
 import { CreateClientDto } from '@/clients/dto/create-client.dto';
 import { UpdateClientDto } from '@/clients/dto/update-client.dto';
 import { ResendVerificationDto } from '@/clients/dto/resend-verification.dto';
+import { ForgotPasswordDto } from '@/clients/dto/forgot-password.dto';
+import { ResetPasswordDto } from '@/clients/dto/reset-password.dto';
 import {
   CLIENTS_SERVICE,
   ClientsServiceInterface,
@@ -36,7 +38,9 @@ import {
   ApiDeleteClient,
   ApiFindAllClients,
   ApiFindOneClient,
+  ApiForgotClientPassword,
   ApiResendClientVerification,
+  ApiResetClientPassword,
   ApiUpdateClient,
   ApiVerifyClientEmail,
 } from '@/clients/decorators/clients-swagger.decorator';
@@ -96,6 +100,31 @@ export class ClientsController {
   ): Promise<ResponseDto> {
     return await this.clientsService.resendVerification(
       resendVerificationDto.email,
+    );
+  }
+
+  @ApiForgotClientPassword()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @Post('forgot-password')
+  async forgotPassword(
+    @Body() forgotPasswordDto: ForgotPasswordDto,
+  ): Promise<ResponseDto> {
+    return await this.clientsService.requestPasswordReset(
+      forgotPasswordDto.email,
+    );
+  }
+
+  @ApiResetClientPassword()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Post('reset-password')
+  async resetPassword(
+    @Body() resetPasswordDto: ResetPasswordDto,
+  ): Promise<ResponseDto> {
+    return await this.clientsService.resetPassword(
+      resetPasswordDto.token,
+      resetPasswordDto.password,
     );
   }
 

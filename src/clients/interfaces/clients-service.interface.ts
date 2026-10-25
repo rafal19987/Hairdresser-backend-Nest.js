@@ -21,6 +21,10 @@ export interface ClientsServiceInterface {
   verifyEmail(token: string): Promise<ResponseDto>;
 
   resendVerification(email: string): Promise<ResponseDto>;
+
+  requestPasswordReset(email: string): Promise<ResponseDto>;
+
+  resetPassword(token: string, password: string): Promise<ResponseDto>;
 }
 
 export const CLIENTS_SERVICE = 'CLIENTS_SERVICE';

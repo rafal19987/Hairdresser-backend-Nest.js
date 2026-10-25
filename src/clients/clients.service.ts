@@ -1,7 +1,8 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomBytes } from 'crypto';
 import { ResponseDto } from '@/common/dto/response.dto';
 import { ResponseHelper } from '@/common/helpers/response.helper';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
@@ -17,8 +18,14 @@ import { ClientVerificationTokenExpiredException } from '@/clients/exceptions/cl
 import { MailService } from '@/mail/mail.service';
 import { Appointment } from '@/appointment/entities/appointment.entity';
 import { AppointmentType } from '@/appointment/enums/appointment-type.enum';
+import { ClientRefreshToken } from '@/auth-client/entities/client-refresh-token.entity';
+import { ClientPasswordResetTokenInvalidException } from '@/clients/exceptions/client-password-reset-token-invalid.exception';
 
 export const EMAIL_VERIFICATION_TTL_HOURS = 24;
+export const PASSWORD_RESET_TTL_MINUTES = 60;
+
+const hashToken = (token: string): string =>
+  createHash('sha256').update(token).digest('hex');
 
 @Injectable()
 export class ClientsService implements ClientsServiceInterface {
@@ -29,6 +36,8 @@ export class ClientsService implements ClientsServiceInterface {
     private readonly clientRepository: Repository<Client>,
     @InjectRepository(Appointment)
     private readonly appointmentRepository: Repository<Appointment>,
+    @InjectRepository(ClientRefreshToken)
+    private readonly clientRefreshTokenRepository: Repository<ClientRefreshToken>,
     private readonly mailService: MailService,
   ) {}
 
@@ -216,6 +225,75 @@ export class ClientsService implements ClientsServiceInterface {
     );
 
     return response;
+  }
+
+  // Same response whether or not the account exists, so it cannot be used to probe emails
+  public async requestPasswordReset(email: string): Promise<ResponseDto> {
+    const response = ResponseHelper.success(
+      'Jeśli konto z tym adresem istnieje, wysłaliśmy na niego link do zmiany hasła.',
+    );
+
+    const client = await this.clientRepository.findOneBy({ email });
+
+    if (!client || !client.active) return response;
+
+    const token = randomBytes(32).toString('base64url');
+
+    await this.clientRepository.update(client.uuid, {
+      passwordResetTokenHash: hashToken(token),
+      passwordResetExpiresAt: new Date(
+        Date.now() + PASSWORD_RESET_TTL_MINUTES * 60 * 1000,
+      ),
+    });
+
+    try {
+      await this.mailService.sendClientPasswordReset(client.email, token);
+    } catch (error) {
+      this.logger.error(
+        `Could not send password reset email to ${client.email}`,
+        error,
+      );
+    }
+
+    return response;
+  }
+
+  public async resetPassword(
+    token: string,
+    password: string,
+  ): Promise<ResponseDto> {
+    const client = await this.clientRepository.findOneBy({
+      passwordResetTokenHash: hashToken(token),
+      passwordResetExpiresAt: MoreThan(new Date(Date.now())),
+      active: true,
+    });
+
+    if (!client) throw new ClientPasswordResetTokenInvalidException();
+
+    // The link proves access to the mailbox, so it also verifies the email
+    const verifiesEmail = !client.emailVerified;
+
+    await this.clientRepository.update(client.uuid, {
+      password: await bcrypt.hash(password, 10),
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
+      ...(verifiesEmail && {
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationDate: null,
+      }),
+    });
+
+    // Sessions opened with the old password must not survive the reset
+    await this.clientRefreshTokenRepository.delete({
+      client: { uuid: client.uuid },
+    });
+
+    if (verifiesEmail) await this._linkGuestAppointments(client);
+
+    return ResponseHelper.success(
+      'Hasło zostało zmienione. Możesz się teraz zalogować.',
+    );
   }
 
   public async findByEmail(email: string): Promise<Client | null> {
