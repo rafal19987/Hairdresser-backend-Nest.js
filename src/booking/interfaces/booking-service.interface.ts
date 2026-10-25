@@ -3,7 +3,10 @@ import { AvailableSlotsQueryDto } from '@/booking/dto/available-slots-query.dto'
 import { CreateClientBookingDto } from '@/booking/dto/create-client-booking.dto';
 
 export interface BookingServiceInterface {
-  findAvailableSlots(query: AvailableSlotsQueryDto): Promise<ResponseDto>;
+  findAvailableSlots(
+    query: AvailableSlotsQueryDto,
+    excludeAppointmentId?: string,
+  ): Promise<ResponseDto>;
   findBookableServices(): Promise<ResponseDto>;
   createAppointment(
     dto: CreateClientBookingDto,

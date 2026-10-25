@@ -22,6 +22,11 @@ export interface BookingAccountServiceInterface {
     uuid: string,
     dto: RescheduleManagedAppointmentDto,
   ): Promise<ResponseDto>;
+  findRescheduleSlots(
+    clientId: string,
+    uuid: string,
+    date: string,
+  ): Promise<ResponseDto>;
 }
 
 export const BOOKING_ACCOUNT_SERVICE = 'BOOKING_ACCOUNT_SERVICE';

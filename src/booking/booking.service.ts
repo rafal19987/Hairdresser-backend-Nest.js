@@ -109,11 +109,10 @@ export class BookingService implements BookingServiceInterface {
     });
   }
 
-  public async findAvailableSlots({
-    serviceId,
-    date,
-    employeeId,
-  }: AvailableSlotsQueryDto): Promise<ResponseDto> {
+  public async findAvailableSlots(
+    { serviceId, date, employeeId }: AvailableSlotsQueryDto,
+    excludeAppointmentId?: string,
+  ): Promise<ResponseDto> {
     const salon = await this.salonService.getBookingSettings();
     const response: AvailableSlotsResponse = { date, slots: [] };
 
@@ -128,7 +127,12 @@ export class BookingService implements BookingServiceInterface {
       openingRanges.length > 0 &&
       date >= formatLocalDate(new Date(Date.now()), salon.timeZone)
     ) {
-      const busyPeriods = await this._findBusyPeriods(salon, date, offers);
+      const busyPeriods = await this._findBusyPeriods(
+        salon,
+        date,
+        offers,
+        excludeAppointmentId,
+      );
       response.slots = this._buildSlots(
         salon,
         date,
@@ -264,8 +268,9 @@ export class BookingService implements BookingServiceInterface {
     salon: Salon,
     date: string,
     offers: BookableOffer[],
+    excludeAppointmentId?: string,
   ): Promise<Map<string, BusyPeriod[]>> {
-    const appointments = await this.appointmentRepository
+    const query = this.appointmentRepository
       .createQueryBuilder('appointment')
       .innerJoin('appointment.calendar', 'calendar')
       .innerJoin('calendar.owner', 'owner')
@@ -285,8 +290,20 @@ export class BookingService implements BookingServiceInterface {
       })
       .andWhere('appointment.scheduledEndAt > :dayStart', {
         dayStart: fromLocalDateTime(date, 0, salon.timeZone),
-      })
-      .getRawMany<{ employeeId: string; startsAt: Date; endsAt: Date }>();
+      });
+
+    // A rescheduled appointment must not block its own time
+    if (excludeAppointmentId) {
+      query.andWhere('appointment.uuid != :excludeAppointmentId', {
+        excludeAppointmentId,
+      });
+    }
+
+    const appointments = await query.getRawMany<{
+      employeeId: string;
+      startsAt: Date;
+      endsAt: Date;
+    }>();
 
     const busyPeriods = new Map<string, BusyPeriod[]>();
 
