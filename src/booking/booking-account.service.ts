@@ -92,6 +92,20 @@ export class BookingAccountService implements BookingAccountServiceInterface {
     );
   }
 
+  public async findRescheduleSlots(
+    clientId: string,
+    uuid: string,
+    date: string,
+  ): Promise<ResponseDto> {
+    const client = await this._findActiveClient(clientId);
+
+    return this.bookingManageService.findRescheduleSlots(
+      client.email,
+      uuid,
+      date,
+    );
+  }
+
   private async _findActiveClient(clientId: string): Promise<Client> {
     const client = await this.clientRepository.findOneBy({
       uuid: clientId,

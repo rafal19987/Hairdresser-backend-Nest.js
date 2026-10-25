@@ -56,6 +56,23 @@ export function ApiCancelAccountAppointment() {
   );
 }
 
+export function ApiFindAccountRescheduleSlots() {
+  return applyDecorators(
+    ApiOperation({
+      summary: 'Get reschedule slots for appointment of the logged-in client',
+      description:
+        'Free slots of the same employee and service for one day. The appointment itself does not block its own time.',
+    }),
+    ApiResponse({ status: 200, description: 'Slots found' }),
+    Unauthorized(),
+    ApiResponse({ status: 404, description: 'Appointment not found' }),
+    ApiResponse({
+      status: 409,
+      description: 'Change deadline passed or appointment is finished',
+    }),
+  );
+}
+
 export function ApiRescheduleAccountAppointment() {
   return applyDecorators(
     ApiOperation({

@@ -278,6 +278,18 @@ describe('BookingService', () => {
     );
   });
 
+  it('does not block slots with the appointment being rescheduled', async () => {
+    await service.findAvailableSlots(
+      { serviceId: 'service-uuid', date: '2026-11-02', employeeId: 'anna' },
+      'appointment-uuid',
+    );
+
+    expect(busyQueryBuilder.andWhere).toHaveBeenCalledWith(
+      'appointment.uuid != :excludeAppointmentId',
+      { excludeAppointmentId: 'appointment-uuid' },
+    );
+  });
+
   it('lists every free assignment for any-employee search', async () => {
     offersQueryBuilder.getRawMany.mockResolvedValue([
       createOffer('anna'),

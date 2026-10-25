@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Put,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -21,11 +22,13 @@ import {
 import {
   CancelManagedAppointmentDto,
   RescheduleManagedAppointmentDto,
+  RescheduleSlotsQueryDto,
 } from '@/booking/dto/manage-booking.dto';
 import { UpdateClientProfileDto } from '@/booking/dto/update-client-profile.dto';
 import {
   ApiCancelAccountAppointment,
   ApiFindAccountAppointments,
+  ApiFindAccountRescheduleSlots,
   ApiGetClientProfile,
   ApiRescheduleAccountAppointment,
   ApiUpdateClientProfile,
@@ -61,6 +64,21 @@ export class BookingAccountController {
   @Get('appointments')
   async findAppointments(@Request() req): Promise<ResponseDto> {
     return await this.bookingAccountService.findAppointments(req.clientId);
+  }
+
+  @ApiFindAccountRescheduleSlots()
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  @Get('appointments/:uuid/slots')
+  async findRescheduleSlots(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+    @Query() query: RescheduleSlotsQueryDto,
+    @Request() req,
+  ): Promise<ResponseDto> {
+    return await this.bookingAccountService.findRescheduleSlots(
+      req.clientId,
+      uuid,
+      query.date,
+    );
   }
 
   @ApiCancelAccountAppointment()

@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import {
 import {
   CancelManagedAppointmentDto,
   RescheduleManagedAppointmentDto,
+  RescheduleSlotsQueryDto,
   SendManageLinkDto,
 } from '@/booking/dto/manage-booking.dto';
 import {
@@ -31,6 +33,7 @@ import {
 import {
   ApiCancelManagedAppointment,
   ApiFindManagedAppointments,
+  ApiFindManagedRescheduleSlots,
   ApiRescheduleManagedAppointment,
   ApiSendManageLink,
 } from '@/booking/decorators/booking-manage-swagger.decorator';
@@ -58,6 +61,23 @@ export class BookingManageController {
   @Get('appointments')
   async findAppointments(@Request() req): Promise<ResponseDto> {
     return await this.bookingManageService.findAppointments(req.bookingEmail);
+  }
+
+  @ApiFindManagedRescheduleSlots()
+  @ApiHeader({ name: BOOKING_TOKEN_HEADER, required: true })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  @UseGuards(BookingAccessTokenGuard)
+  @Get('appointments/:uuid/slots')
+  async findRescheduleSlots(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+    @Query() query: RescheduleSlotsQueryDto,
+    @Request() req,
+  ): Promise<ResponseDto> {
+    return await this.bookingManageService.findRescheduleSlots(
+      req.bookingEmail,
+      uuid,
+      query.date,
+    );
   }
 
   @ApiCancelManagedAppointment()

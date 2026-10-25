@@ -16,6 +16,11 @@ export interface BookingManageServiceInterface {
     uuid: string,
     dto: RescheduleManagedAppointmentDto,
   ): Promise<ResponseDto>;
+  findRescheduleSlots(
+    email: string,
+    uuid: string,
+    date: string,
+  ): Promise<ResponseDto>;
   sendManageLink(email: string): Promise<ResponseDto>;
 }
 
