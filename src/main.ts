@@ -1,6 +1,7 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
@@ -15,10 +16,16 @@ console.log('Ścieżka do pliku .env:', envPath);
 dotenv.config({ path: envPath });
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
   const nodeEnv = configService.get('NODE_ENV');
   const port = configService.get('PORT') || '3000';
+
+  // Behind a reverse proxy, e.g. TRUST_PROXY=uniquelocal, so rate limits count client addresses instead of the proxy's
+  const trustProxy = configService.get<string>('TRUST_PROXY');
+  if (trustProxy) {
+    app.set('trust proxy', trustProxy);
+  }
 
   app.use(
     helmet({
