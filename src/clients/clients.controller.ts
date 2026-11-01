@@ -76,6 +76,7 @@ export class ClientsController {
   }
 
   @ApiCreateClient()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('register')
   async register(
     @Body() createClientDto: CreateClientDto,
@@ -84,6 +85,7 @@ export class ClientsController {
   }
 
   @ApiVerifyClientEmail()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Get('verify-email/:token')
   async verifyEmail(
     @Param('token', ParseUUIDPipe) token: string,

@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppointmentsService } from './appointments.service';
@@ -30,6 +31,7 @@ import { SALON_SERVICE } from '@/salon/interfaces/salon-service.interface';
 import { BookingAccessService } from '@/booking-access/booking-access.service';
 import { ConfigService } from '@nestjs/config';
 import { AuditLogService } from '@/audit-log/audit-log.service';
+import { CalendarAccessService } from '@/calendar/calendar-access.service';
 import { AppointmentOutsideOpeningHoursException } from '@/appointment/exceptions/appointment-outside-opening-hours.exception';
 import { AppointmentBeyondBookingHorizonException } from '@/appointment/exceptions/appointment-beyond-booking-horizon.exception';
 
@@ -121,6 +123,8 @@ describe('AppointmentsService', () => {
   const conflictQueryBuilder = {
     innerJoin: jest.fn().mockReturnThis(),
     innerJoinAndSelect: jest.fn().mockReturnThis(),
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     getOne: jest.fn(),
@@ -142,6 +146,7 @@ describe('AppointmentsService', () => {
   };
 
   const calendarRepository = { findOne: jest.fn(), findOneBy: jest.fn() };
+  const calendarAccessService = { assertCanRead: jest.fn() };
   const userRepository = { findOneBy: jest.fn() };
   const clientRepository = { findOneBy: jest.fn() };
   const usersServicesRepository = { findOne: jest.fn() };
@@ -228,6 +233,7 @@ describe('AppointmentsService', () => {
         { provide: SALON_SERVICE, useValue: salonService },
         { provide: BookingAccessService, useValue: bookingAccessService },
         { provide: AuditLogService, useValue: auditLogService },
+        { provide: CalendarAccessService, useValue: calendarAccessService },
         {
           provide: ConfigService,
           useValue: {
@@ -245,6 +251,67 @@ describe('AppointmentsService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  describe('findInRange', () => {
+    const query = {
+      from: '2026-11-02T00:00:00.000Z',
+      to: '2026-11-09T00:00:00.000Z',
+      calendarIds: ['calendar-a', 'calendar-b', 'calendar-a'],
+    };
+
+    it('returns appointments overlapping the range from visible calendars', async () => {
+      conflictQueryBuilder.getMany.mockResolvedValue([createAppointment()]);
+
+      const result = await service.findInRange(query, 'user-uuid');
+
+      expect(calendarAccessService.assertCanRead).toHaveBeenCalledWith(
+        'user-uuid',
+        ['calendar-a', 'calendar-b'],
+      );
+      expect(conflictQueryBuilder.where).toHaveBeenCalledWith(
+        'calendar.uuid IN (:...calendarUuids)',
+        { calendarUuids: ['calendar-a', 'calendar-b'] },
+      );
+      expect(conflictQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'appointment.scheduledAt < :to',
+        { to: new Date(query.to) },
+      );
+      expect(conflictQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'appointment.scheduledEndAt > :from',
+        { from: new Date(query.from) },
+      );
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('does not query calendars the user cannot see', async () => {
+      calendarAccessService.assertCanRead.mockRejectedValueOnce(
+        new ForbiddenException(),
+      );
+
+      await expect(
+        service.findInRange(query, 'user-uuid'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(conflictQueryBuilder.getMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'ends before it starts',
+        '2026-11-09T00:00:00.000Z',
+        '2026-11-02T00:00:00.000Z',
+      ],
+      [
+        'is longer than 45 days',
+        '2026-11-01T00:00:00.000Z',
+        '2026-12-17T00:00:00.000Z',
+      ],
+    ])('rejects a range that %s', async (_, from, to) => {
+      await expect(
+        service.findInRange({ ...query, from, to }, 'user-uuid'),
+      ).rejects.toBeInstanceOf(AppointmentInvalidDateRangeException);
+      expect(calendarAccessService.assertCanRead).not.toHaveBeenCalled();
+    });
   });
 
   describe('conflicts and overlaps', () => {

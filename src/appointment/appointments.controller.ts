@@ -23,6 +23,7 @@ import { CreateInternalAppointmentDto } from './dto/create-internal-appointment.
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { RescheduleAppointmentDto } from './dto/reschedule-appointment.dto';
+import { AppointmentsRangeQueryDto } from './dto/appointments-range-query.dto';
 import { ResponseDto } from '@/common/dto/response.dto';
 import { PaginationParamsDto } from '@/common/dto/pagination-params.dto';
 import { AuthenticationGuard } from '@/guards/authentication.guard';
@@ -33,6 +34,7 @@ import { Resource } from '@/roles/enums/resource.enum';
 import {
   ApiFindAllAppointments,
   ApiFindAppointmentsByCalendar,
+  ApiFindAppointmentsInRange,
   ApiFindOneAppointment,
   ApiCreateAppointment,
   ApiCreateInternalAppointment,
@@ -70,6 +72,16 @@ export class AppointmentsController {
       uuid,
       paginationParams,
     );
+  }
+
+  @ApiFindAppointmentsInRange()
+  @Permissions([{ resource: Resource.CALENDAR, actions: [Action.READ] }])
+  @Get('range')
+  async findInRange(
+    @Query() query: AppointmentsRangeQueryDto,
+    @Request() req: any,
+  ): Promise<ResponseDto> {
+    return await this.appointmentsService.findInRange(query, req.userId);
   }
 
   @ApiFindOneAppointment()

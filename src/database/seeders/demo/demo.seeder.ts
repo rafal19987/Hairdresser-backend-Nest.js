@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { Role } from '@/roles/entities/role.entity';
 import { User } from '@/users/entities/user.entity';
 import { Calendar } from '@/calendar/entities/calendar.entity';
+import { CalendarShare } from '@/calendar-share/entities/calendar-share.entity';
 import { Service } from '@/services/entities/service.entity';
 import { UsersServices } from '@/users-services/entities/users-services.entity';
 import { Client } from '@/clients/entities/client.entity';
@@ -24,6 +25,7 @@ import {
   toMinutes,
 } from '@/salon/helpers/time.helper';
 import {
+  DEMO_CALENDAR_SHARE,
   DEMO_CLIENT_PASSWORD,
   DEMO_CLIENTS,
   DEMO_DAYS_AHEAD,
@@ -33,6 +35,8 @@ import {
   DEMO_EMPLOYEES,
   DEMO_GUESTS,
   DEMO_INTERNAL_EVENTS,
+  DEMO_RECEPTION_ROLE,
+  DEMO_RECEPTION_USER,
   DEMO_SERVICES,
   DemoServiceKey,
 } from './demo-data';
@@ -59,6 +63,7 @@ export async function seedDemoData(dataSource: DataSource): Promise<void> {
 
   if (alreadySeeded) {
     console.log('Demo data already exists.');
+    await seedDemoAccess(dataSource);
     return;
   }
 
@@ -75,12 +80,71 @@ export async function seedDemoData(dataSource: DataSource): Promise<void> {
     );
   });
 
+  await seedDemoAccess(dataSource);
+
   console.log(
-    `Demo employees (password ${DEMO_EMPLOYEE_PASSWORD}): ${DEMO_EMPLOYEES.map(e => e.email).join(', ')}`,
+    `Demo employees (password ${DEMO_EMPLOYEE_PASSWORD}): ${DEMO_EMPLOYEES.map(e => e.email).join(', ')}, reception: ${DEMO_RECEPTION_USER.email}`,
   );
   console.log(
     `Demo clients (password ${DEMO_CLIENT_PASSWORD}): ${DEMO_CLIENTS.map(c => c.email).join(', ')}`,
   );
+}
+
+// Idempotent, so databases seeded before calendar access was added get it too
+async function seedDemoAccess(dataSource: DataSource): Promise<void> {
+  await dataSource.transaction(async manager => {
+    const users = manager.getRepository(User);
+    const roles = manager.getRepository(Role);
+
+    const role =
+      (await roles.findOneBy({ name: DEMO_RECEPTION_ROLE.name })) ??
+      (await roles.save(roles.create(DEMO_RECEPTION_ROLE)));
+
+    if (
+      !(await users.exists({ where: { email: DEMO_RECEPTION_USER.email } }))
+    ) {
+      await users.save(
+        users.create({
+          ...DEMO_RECEPTION_USER,
+          username: DEMO_RECEPTION_USER.email,
+          password: await bcrypt.hash(DEMO_EMPLOYEE_PASSWORD, 10),
+          active: true,
+          role,
+        }),
+      );
+    }
+
+    const [calendar, sharedWith] = await Promise.all([
+      manager.getRepository(Calendar).findOne({
+        where: {
+          owner: { email: DEMO_CALENDAR_SHARE.ownerEmail },
+          isDefault: true,
+        },
+      }),
+      users.findOneBy({ email: DEMO_CALENDAR_SHARE.sharedWithEmail }),
+    ]);
+
+    if (!calendar || !sharedWith) return;
+
+    const shares = manager.getRepository(CalendarShare);
+    const exists = await shares.exists({
+      where: {
+        calendar: { uuid: calendar.uuid },
+        sharedWith: { uuid: sharedWith.uuid },
+      },
+    });
+
+    if (!exists) {
+      await shares.save(
+        shares.create({
+          calendar,
+          sharedWith,
+          permission: DEMO_CALENDAR_SHARE.permission,
+          active: true,
+        }),
+      );
+    }
+  });
 }
 
 async function seedEmployeeRole(manager: EntityManager): Promise<Role> {

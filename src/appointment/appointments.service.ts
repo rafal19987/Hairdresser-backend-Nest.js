@@ -28,6 +28,11 @@ import { AppointmentConflictException } from '@/appointment/exceptions/appointme
 import { AppointmentNotModifiableException } from '@/appointment/exceptions/appointment-not-modifiable.exception';
 import { AppointmentInvalidDateRangeException } from '@/appointment/exceptions/appointment-invalid-date-range.exception';
 import {
+  AppointmentsRangeQueryDto,
+  MAX_RANGE_DAYS,
+} from '@/appointment/dto/appointments-range-query.dto';
+import { CalendarAccessService } from '@/calendar/calendar-access.service';
+import {
   AppointmentOverlapResponse,
   AppointmentResponse,
 } from '@/appointment/interfaces/appointment-response.interface';
@@ -96,6 +101,7 @@ export class AppointmentsService implements AppointmentsServiceInterface {
     private readonly bookingAccessService: BookingAccessService,
     private readonly configService: ConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly calendarAccessService: CalendarAccessService,
   ) {}
 
   public async findAll(
@@ -141,6 +147,47 @@ export class AppointmentsService implements AppointmentsServiceInterface {
       await this._toResponsesWithOverlaps(appointments),
       total,
       paginationParams,
+    );
+  }
+
+  // Appointments overlapping [from, to), so ones crossing the range edges are included
+  public async findInRange(
+    query: AppointmentsRangeQueryDto,
+    userId: string,
+  ): Promise<ResponseDto> {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    const maxRangeMs = MAX_RANGE_DAYS * 24 * 60 * 60 * 1000;
+
+    if (to <= from || to.getTime() - from.getTime() > maxRangeMs) {
+      throw new AppointmentInvalidDateRangeException(
+        `Zakres dat musi kończyć się po początku i obejmować najwyżej ${MAX_RANGE_DAYS} dni`,
+      );
+    }
+
+    const calendarUuids = [...new Set(query.calendarIds)];
+
+    await this.calendarAccessService.assertCanRead(userId, calendarUuids);
+
+    const appointments = await this.appointmentRepository
+      .createQueryBuilder('appointment')
+      .innerJoinAndSelect('appointment.calendar', 'calendar')
+      .leftJoinAndSelect('calendar.owner', 'owner')
+      .leftJoinAndSelect('appointment.client', 'client')
+      .leftJoinAndSelect('appointment.userService', 'userService')
+      .leftJoinAndSelect('userService.user', 'employee')
+      .leftJoinAndSelect('userService.service', 'service')
+      .where('calendar.uuid IN (:...calendarUuids)', { calendarUuids })
+      .andWhere('appointment.deleted = false')
+      .andWhere('appointment.scheduledAt < :to', { to })
+      .andWhere('appointment.scheduledEndAt > :from', { from })
+      .orderBy('appointment.scheduledAt', 'ASC')
+      .getMany();
+
+    return ResponseHelper.success(
+      'Appointments found',
+      HttpStatus.OK,
+      await this._toResponsesWithOverlaps(appointments),
     );
   }
 
