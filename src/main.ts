@@ -44,9 +44,14 @@ async function bootstrap() {
       ? configService.get('APP_URL')
       : 'http://localhost:4200';
 
+  // CORS_ORIGINS overrides the defaults, e.g. to allow both the built admin and `ng serve`
+  const corsOrigins = configService.get<string>('CORS_ORIGINS');
+
   app.enableCors({
     // Admin panel and the public website, which uses the booking API
-    origin: [adminUrl, configService.get('WEBSITE_URL')].filter(Boolean),
+    origin: corsOrigins
+      ? corsOrigins.split(',').map(origin => origin.trim())
+      : [adminUrl, configService.get('WEBSITE_URL')].filter(Boolean),
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

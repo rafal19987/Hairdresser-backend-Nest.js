@@ -42,6 +42,34 @@ describe('MailService', () => {
     Object.assign(service, { client: mailtrapClient });
   });
 
+  it('sends through SMTP when configured, e.g. to Mailpit in tests', async () => {
+    const transporter = { sendMail: jest.fn().mockResolvedValue(undefined) };
+    config.MAIL_TRANSPORT = 'smtp';
+    config.SMTP_HOST = 'mailpit';
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MailService,
+        { provide: ConfigService, useValue: configService },
+        { provide: getRepositoryToken(Salon), useValue: salonRepository },
+      ],
+    }).compile();
+    const smtpService = module.get<MailService>(MailService);
+    Object.assign(smtpService, { smtp: transporter });
+    delete config.MAIL_TRANSPORT;
+    delete config.SMTP_HOST;
+    salonRepository.find.mockResolvedValue([]);
+
+    await smtpService.sendClientPasswordReset('ewa@example.com', 'token-123');
+
+    const [message] = transporter.sendMail.mock.calls[0];
+    expect(message).toMatchObject({
+      from: { name: 'Rêve', address: 'noreply@hairdresser.com' },
+      to: 'ewa@example.com',
+    });
+    expect(message.html).toContain('reset-hasla');
+    expect(mailtrapClient.send).not.toHaveBeenCalled();
+  });
+
   it('uses salon name, contact and time zone from settings', async () => {
     salonRepository.find.mockResolvedValue([
       {
