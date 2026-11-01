@@ -1,4 +1,4 @@
-import {StringValue} from 'ms';
+import { StringValue } from 'ms';
 
 export const jwtConstants = {
   accessTokenSecret: process.env.JWT_ACCESS_TOKEN_SECRET_KEY as StringValue,

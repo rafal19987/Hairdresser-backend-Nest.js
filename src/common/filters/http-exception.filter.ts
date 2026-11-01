@@ -1,12 +1,12 @@
 import {
-    ExceptionFilter,
-    Catch,
-    ArgumentsHost,
-    HttpException,
-    HttpStatus,
-    Injectable,
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpException,
+  HttpStatus,
+  Injectable,
 } from '@nestjs/common';
-import {Request, Response} from 'express';
+import { Request, Response } from 'express';
 
 @Catch()
 @Injectable()

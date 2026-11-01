@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from 'src/auth/auth.service';
-import {jwtConstants} from "@/auth/constants";
+import { jwtConstants } from '@/auth/constants';
 
 @Injectable()
 export class AuthenticationGuard implements CanActivate {
@@ -25,9 +25,9 @@ export class AuthenticationGuard implements CanActivate {
 
     try {
       // Weryfikacja tokena
-        const payload = this.jwtService.verify(token, {
-            secret: jwtConstants.accessTokenSecret,
-        });
+      const payload = this.jwtService.verify(token, {
+        secret: jwtConstants.accessTokenSecret,
+      });
 
       // Sprawdź, czy token został unieważniony
       const isRevoked = await this.authService.isAccessTokenRevoked(token);
