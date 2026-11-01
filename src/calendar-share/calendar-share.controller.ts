@@ -12,10 +12,7 @@ import {
   Request,
   HttpStatus,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiBearerAuth,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CreateCalendarShareDto } from './dto/create-calendar-share.dto';
 import { UpdateCalendarShareDto } from './dto/update-calendar-share.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';

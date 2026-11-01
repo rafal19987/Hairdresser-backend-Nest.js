@@ -23,10 +23,7 @@ import {
   UsersServiceInterface,
 } from './interfaces/users-service.interface';
 import { EditUserDto } from './dto/edit-user.dto';
-import {
-  ApiTags,
-  ApiBearerAuth,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthenticationGuard } from '@/guards/authentication.guard';
 import { AuthorizationGuard } from '@/guards/authorization.guard';
 import {

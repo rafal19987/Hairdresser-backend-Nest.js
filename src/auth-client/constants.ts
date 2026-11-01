@@ -6,7 +6,9 @@ export const CLIENT_TOKEN_TYPE = 'client';
 export const getClientAccessTokenSecret = (
   configService: ConfigService,
 ): string => {
-  const secret = configService.get<string>('JWT_CLIENT_ACCESS_TOKEN_SECRET_KEY');
+  const secret = configService.get<string>(
+    'JWT_CLIENT_ACCESS_TOKEN_SECRET_KEY',
+  );
 
   if (!secret) {
     throw new Error('JWT_CLIENT_ACCESS_TOKEN_SECRET_KEY is not set');

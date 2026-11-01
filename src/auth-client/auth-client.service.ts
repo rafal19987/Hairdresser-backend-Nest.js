@@ -139,9 +139,7 @@ export class AuthClientService {
 
   private _getRefreshTokenExpiryDate(): Date {
     const expiryDate = new Date();
-    expiryDate.setDate(
-      expiryDate.getDate() + CLIENT_REFRESH_TOKEN_TTL_DAYS,
-    );
+    expiryDate.setDate(expiryDate.getDate() + CLIENT_REFRESH_TOKEN_TTL_DAYS);
 
     return expiryDate;
   }
