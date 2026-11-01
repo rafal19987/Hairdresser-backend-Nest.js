@@ -12,6 +12,7 @@ import {
 } from '@/mail/interfaces/mail.interface';
 import { MailTemplates } from '@/mail/templates/mail-templates';
 import { MailtrapClient } from 'mailtrap';
+import { createTransport, Transporter } from 'nodemailer';
 import { Salon } from '@/salon/entities/salon.entity';
 import { findDefaultSalon } from '@/salon/helpers/default-salon.helper';
 
@@ -31,12 +32,23 @@ interface MailTemplate {
 export class MailService implements MailServiceInterface {
   private readonly logger = new Logger(MailService.name);
   private client: MailtrapClient;
+  // Set when MAIL_TRANSPORT=smtp, e.g. Mailpit in the test environment
+  private smtp?: Transporter;
 
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(Salon)
     private readonly salonRepository: Repository<Salon>,
   ) {
+    if (this.configService.get<string>('MAIL_TRANSPORT') === 'smtp') {
+      this.smtp = createTransport({
+        host: this.configService.get<string>('SMTP_HOST'),
+        port: Number(this.configService.get<string>('SMTP_PORT') ?? 1025),
+        secure: false,
+      });
+      return;
+    }
+
     const isSandbox =
       this.configService.get<string>('MAILTRAP_USE_SANDBOX') === 'true';
     const inboxId = isSandbox
@@ -52,6 +64,20 @@ export class MailService implements MailServiceInterface {
 
   async send(options: MailOptions): Promise<void> {
     try {
+      if (this.smtp) {
+        await this.smtp.sendMail({
+          from: {
+            name: options.fromName ?? DEFAULT_BRANDING.salonName,
+            address: this.configService.get<string>('MAIL_FROM') as string,
+          },
+          to: options.to as string,
+          subject: options.subject as string,
+          html: options.html as string,
+        });
+        this.logger.log(`Email sent to ${options.to} — ${options.subject}`);
+        return;
+      }
+
       await this.client.send({
         from: {
           name: options.fromName ?? DEFAULT_BRANDING.salonName,
