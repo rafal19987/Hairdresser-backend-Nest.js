@@ -1,0 +1,24 @@
+name: PR source branch
+
+# GitHub has no rule for where a pull request comes from, so this check
+# is marked as required in the master ruleset: master takes only develop.
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  develop-only:
+    name: Master accepts pull requests from develop only
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the source branch
+        env:
+          # Branch names come from the pull request author, so they stay out of the script text
+          SOURCE_BRANCH: ${{ github.head_ref }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$SOURCE_BRANCH" != "develop" ] || [ "$SOURCE_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Pull requests to master must come from develop in this repository (got $SOURCE_REPO:$SOURCE_BRANCH)"
+            exit 1
+          fi
+          echo "Source branch is develop"
